@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Plus, Trash2, ChevronLeft, ChevronRight, Utensils, 
-  Flame, Apple, Coffee, Moon, Sun, AlertCircle, CheckCircle2, Calendar
+  Flame, Apple, Coffee, Moon, Sun, AlertCircle, CheckCircle2, 
+  Calendar, LogOut
 } from 'lucide-react';
+import { supabase } from './supabaseClient';
 
 const MEAL_CATEGORIES = [
   { id: 'breakfast', name: 'Breakfast', icon: Coffee },
@@ -24,7 +26,6 @@ const PRESETS = [
 ];
 
 export default function App() {
-  // Use local time zone format YYYY-MM-DD
   const getTodayString = () => {
     const d = new Date();
     const year = d.getFullYear();
@@ -33,16 +34,16 @@ export default function App() {
     return `${year}-${month}-${day}`;
   };
 
+  const [session, setSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [authError, setAuthError] = useState('');
+
   const [currentDate, setCurrentDate] = useState(getTodayString);
-  const [dailyGoal, setDailyGoal] = useState(() => {
-    return Number(localStorage.getItem('calorie_goal')) || 2200;
-  });
-
-  const [logs, setLogs] = useState(() => {
-    const saved = localStorage.getItem('calorie_logs');
-    return saved ? JSON.parse(saved) : {};
-  });
-
+  const [dailyGoal, setDailyGoal] = useState(2000);
+  const [entries, setEntries] = useState([]);
   const [activeCategory, setActiveCategory] = useState('breakfast');
   const [foodName, setFoodName] = useState('');
   const [calories, setCalories] = useState('');
@@ -51,19 +52,291 @@ export default function App() {
   const [fat, setFat] = useState('');
   const [darkMode, setDarkMode] = useState(false);
 
+  // Check Supabase session
   useEffect(() => {
-    localStorage.setItem('calorie_logs', JSON.stringify(logs));
-  }, [logs]);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setAuthLoading(false);
+    });
 
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Fetch entries and user goal for selected date
   useEffect(() => {
-    if (dailyGoal) {
-      localStorage.setItem('calorie_goal', dailyGoal.toString());
+    if (!session?.user) return;
+
+    const fetchDayData = async () => {
+      // 1. Fetch user calorie goal
+      const { data: goalData } = await supabase
+        .from('user_settings')
+        .select('daily_goal')
+        .eq('user_id', session.user.id)
+        .maybeSingle();
+
+      if (goalData?.daily_goal) {
+        setDailyGoal(goalData.daily_goal);
+      }
+
+      // 2. Fetch meals for active date
+      const { data: mealData, error } = await supabase
+        .from('meal_entries')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .eq('date', currentDate)
+        .order('created_at', { ascending: true });
+
+      if (!error && mealData) {
+        setEntries(mealData);
+      }
+    };
+
+    fetchDayData();
+  }, [session, currentDate]);
+
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    if (isSignUp) {
+      const { error } = await supabase.auth.signUp({
+        email: authEmail,
+        password: authPassword
+      });
+      if (error) setAuthError(error.message);
+      else alert('Signup successful! Check your email inbox to confirm your account.');
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: authEmail,
+        password: authPassword
+      });
+      if (error) setAuthError(error.message);
     }
-  }, [dailyGoal]);
+  };
 
-  const currentEntries = logs[currentDate] || [];
+  const handleUpdateGoal = async (newGoal) => {
+    const val = Number(newGoal) || 2000;
+    setDailyGoal(val);
+    if (!session?.user) return;
 
-  const totals = currentEntries.reduce(
+    await supabase.from('user_settings').upsert({
+      user_id: session.user.id,
+      daily_goal: val,
+      updated_at: new Date().toISOString()
+    });
+  };
+
+  const handleAddEntry = async (e) => {
+    e.preventDefault();
+    if (!foodName || !calories || !session?.user) return;
+
+    const newRecord = {
+      user_id: session.user.id,
+      date: currentDate,
+      name: foodName,
+      calories: Number(calories),
+      protein: Number(protein) || 0,
+      carbs: Number(carbs) || 0,
+      fat: Number(fat) || 0,
+      category: activeCategory
+    };
+
+    const { data, error } = await supabase
+      .from('meal_entries')
+      .insert([newRecord])
+      .select();
+
+    if (!error && data) {
+      setEntries((prev) => [...prev, data[0]]);
+      setFoodName('');
+      setCalories('');
+      setProtein('');
+      setCarbs('');
+      setFat('');
+    }
+  };
+
+  const handleAddPreset = async (item) => {
+    if (!session?.user) return;
+
+    const newRecord = {
+      user_id: session.user.id,
+      date: currentDate,
+      name: item.name,
+      calories: item.calories,
+      protein: item.protein,
+      carbs: item.carbs,
+      fat: item.fat,
+      category: item.category
+    };
+
+    const { data, error } = await supabase
+      .from('meal_entries')
+      .insert([newRecord])
+      .select();
+
+    if (!error && data) {
+      setEntries((prev) => [...prev, data[0]]);
+    }
+  };
+
+  const handleDeleteEntry = async (id) => {
+    const { error } = await supabase
+      .from('meal_entries')
+      .delete()
+      .eq('id', id);
+
+    if (!error) {
+      setEntries((prev) => prev.filter((item) => item.id !== id));
+    }
+  };
+
+  const changeDate = (days) => {
+    const parts = currentDate.split('-').map(Number);
+    const date = new Date(parts[0], parts[1] - 1, parts[2]);
+    date.setDate(date.getDate() + days);
+    
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    setCurrentDate(`${year}-${month}-${day}`);
+  };
+
+  const getDateLabel = () => {
+    const todayStr = getTodayString();
+    const yDate = new Date();
+    yDate.setDate(yDate.getDate() - 1);
+    const yStr = `${yDate.getFullYear()}-${String(yDate.getMonth() + 1).padStart(2, '0')}-${String(yDate.getDate()).padStart(2, '0')}`;
+
+    const tDate = new Date();
+    tDate.setDate(tDate.getDate() + 1);
+    const tStr = `${tDate.getFullYear()}-${String(tDate.getMonth() + 1).padStart(2, '0')}-${String(tDate.getDate()).padStart(2, '0')}`;
+
+    if (currentDate === todayStr) return 'Today';
+    if (currentDate === yStr) return 'Yesterday';
+    if (currentDate === tStr) return 'Tomorrow';
+
+    const parts = currentDate.split('-').map(Number);
+    const d = new Date(parts[0], parts[1] - 1, parts[2]);
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+
+  if (authLoading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#121212', color: '#fff' }}>
+        Connecting to cloud...
+      </div>
+    );
+  }
+
+  // Auth Screen
+  if (!session) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#0f172a',
+        padding: '20px',
+        fontFamily: 'system-ui, -apple-system, sans-serif'
+      }}>
+        <div style={{
+          width: '100%',
+          maxWidth: '380px',
+          background: '#1e293b',
+          padding: '30px',
+          borderRadius: '16px',
+          color: '#fff',
+          boxShadow: '0 8px 30px rgba(0,0,0,0.3)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '20px' }}>
+            <Flame color="#f97316" size={32} />
+            <h2 style={{ margin: 0, fontSize: '24px' }}>Calorie Cloud</h2>
+          </div>
+
+          <p style={{ fontSize: '13px', color: '#94a3b8', textAlign: 'center', marginTop: '-10px', marginBottom: '24px' }}>
+            {isSignUp ? 'Create an account to sync logs across devices' : 'Sign in to access your persistent cloud logs'}
+          </p>
+
+          {authError && (
+            <div style={{ background: '#ef444420', border: '1px solid #ef4444', color: '#ef4444', padding: '10px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px' }}>
+              {authError}
+            </div>
+          )}
+
+          <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <input
+              type="email"
+              placeholder="Email address"
+              value={authEmail}
+              onChange={(e) => setAuthEmail(e.target.value)}
+              required
+              style={{
+                padding: '12px',
+                borderRadius: '8px',
+                border: '1px solid #334155',
+                background: '#0f172a',
+                color: '#fff',
+                fontSize: '14px'
+              }}
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              value={authPassword}
+              onChange={(e) => setAuthPassword(e.target.value)}
+              required
+              style={{
+                padding: '12px',
+                borderRadius: '8px',
+                border: '1px solid #334155',
+                background: '#0f172a',
+                color: '#fff',
+                fontSize: '14px'
+              }}
+            />
+            <button
+              type="submit"
+              style={{
+                padding: '12px',
+                borderRadius: '8px',
+                background: '#f97316',
+                color: '#fff',
+                border: 'none',
+                fontWeight: '700',
+                cursor: 'pointer',
+                marginTop: '8px'
+              }}
+            >
+              {isSignUp ? 'Sign Up' : 'Log In'}
+            </button>
+          </form>
+
+          <button
+            onClick={() => { setIsSignUp(!isSignUp); setAuthError(''); }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#38bdf8',
+              fontSize: '13px',
+              marginTop: '16px',
+              cursor: 'pointer',
+              width: '100%',
+              textAlign: 'center'
+            }}
+          >
+            {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const totals = entries.reduce(
     (acc, item) => ({
       calories: acc.calories + (Number(item.calories) || 0),
       protein: acc.protein + (Number(item.protein) || 0),
@@ -78,95 +351,16 @@ export default function App() {
   const isOverBudget = remainingCalories < 0;
   const progressPercent = Math.min(100, Math.round((totals.calories / goalNumber) * 100));
 
-  const handleAddEntry = (e) => {
-    e.preventDefault();
-    if (!foodName || !calories) return;
-
-    const newEntry = {
-      id: Date.now().toString(),
-      name: foodName,
-      calories: Number(calories),
-      protein: Number(protein) || 0,
-      carbs: Number(carbs) || 0,
-      fat: Number(fat) || 0,
-      category: activeCategory
-    };
-
-    setLogs((prev) => ({
-      ...prev,
-      [currentDate]: [...(prev[currentDate] || []), newEntry]
-    }));
-
-    setFoodName('');
-    setCalories('');
-    setProtein('');
-    setCarbs('');
-    setFat('');
-  };
-
-  const handleAddPreset = (item) => {
-    const newEntry = {
-      id: Date.now().toString(),
-      ...item
-    };
-
-    setLogs((prev) => ({
-      ...prev,
-      [currentDate]: [...(prev[currentDate] || []), newEntry]
-    }));
-  };
-
-  const handleDeleteEntry = (id) => {
-    setLogs((prev) => ({
-      ...prev,
-      [currentDate]: (prev[currentDate] || []).filter((item) => item.id !== id)
-    }));
-  };
-
-  const changeDate = (days) => {
-    const parts = currentDate.split('-').map(Number);
-    const date = new Date(parts[0], parts[1] - 1, parts[2]);
-    date.setDate(date.getDate() + days);
-    
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    setCurrentDate(`${year}-${month}-${day}`);
-  };
-
-  // Format date header to clearly show Today, Yesterday, or formatted date
-  const getDateLabel = () => {
-    const todayStr = getTodayString();
-    
-    // Yesterday
-    const yDate = new Date();
-    yDate.setDate(yDate.getDate() - 1);
-    const yStr = `${yDate.getFullYear()}-${String(yDate.getMonth() + 1).padStart(2, '0')}-${String(yDate.getDate()).padStart(2, '0')}`;
-
-    // Tomorrow
-    const tDate = new Date();
-    tDate.setDate(tDate.getDate() + 1);
-    const tStr = `${tDate.getFullYear()}-${String(tDate.getMonth() + 1).padStart(2, '0')}-${String(tDate.getDate()).padStart(2, '0')}`;
-
-    if (currentDate === todayStr) return 'Today';
-    if (currentDate === yStr) return 'Yesterday';
-    if (currentDate === tStr) return 'Tomorrow';
-
-    const parts = currentDate.split('-').map(Number);
-    const d = new Date(parts[0], parts[1] - 1, parts[2]);
-    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  };
-
   return (
     <div style={{
       minHeight: '100vh',
       backgroundColor: darkMode ? '#121212' : '#f8fafc',
       color: darkMode ? '#f1f5f9' : '#0f172a',
-      fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
       paddingBottom: '60px',
       transition: 'background-color 0.2s, color 0.2s'
     }}>
-      {/* Top Bar */}
+      {/* Top Header */}
       <header style={{
         maxWidth: '560px',
         margin: '0 auto',
@@ -179,27 +373,40 @@ export default function App() {
           <Flame color="#f97316" size={26} />
           <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>Calorie Tracker</h1>
         </div>
-        <button
-          onClick={() => setDarkMode(!darkMode)}
-          style={{
-            background: darkMode ? '#27272a' : '#e2e8f0',
-            border: 'none',
-            borderRadius: '50%',
-            padding: '8px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'inherit'
-          }}
-        >
-          {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            onClick={() => setDarkMode(!darkMode)}
+            style={{
+              background: darkMode ? '#27272a' : '#e2e8f0',
+              border: 'none',
+              borderRadius: '50%',
+              padding: '8px',
+              cursor: 'pointer',
+              color: 'inherit'
+            }}
+          >
+            {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+          <button
+            onClick={() => supabase.auth.signOut()}
+            title="Log out"
+            style={{
+              background: darkMode ? '#27272a' : '#e2e8f0',
+              border: 'none',
+              borderRadius: '50%',
+              padding: '8px',
+              cursor: 'pointer',
+              color: 'inherit'
+            }}
+          >
+            <LogOut size={18} />
+          </button>
+        </div>
       </header>
 
       <main style={{ maxWidth: '560px', margin: '0 auto', padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         
-        {/* Date Selector with Native Calendar Picker */}
+        {/* Date Selector */}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -209,43 +416,21 @@ export default function App() {
           borderRadius: '14px',
           boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
         }}>
-          <button 
-            onClick={() => changeDate(-1)} 
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '6px' }}
-            aria-label="Previous Day"
-          >
+          <button onClick={() => changeDate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '6px' }}>
             <ChevronLeft size={22} />
           </button>
           
-          {/* Clickable Center Area with Hidden Native Date Input */}
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
             <Calendar size={17} color="#f97316" />
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <span style={{ fontWeight: '700', fontSize: '15px', lineHeight: 1.2 }}>
-                {getDateLabel()}
-              </span>
-              <span style={{ fontSize: '11px', color: '#888' }}>
-                {currentDate}
-              </span>
+              <span style={{ fontWeight: '700', fontSize: '15px' }}>{getDateLabel()}</span>
+              <span style={{ fontSize: '11px', color: '#888' }}>{currentDate}</span>
             </div>
-
-            {/* Invisible native date picker covering the button */}
             <input
               type="date"
               value={currentDate}
-              onChange={(e) => {
-                if (e.target.value) setCurrentDate(e.target.value);
-              }}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                opacity: 0,
-                cursor: 'pointer',
-                fontSize: '16px' // Prevents iOS Safari from zooming on input focus
-              }}
+              onChange={(e) => e.target.value && setCurrentDate(e.target.value)}
+              style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', fontSize: '16px' }}
             />
           </div>
 
@@ -253,110 +438,50 @@ export default function App() {
             {currentDate !== getTodayString() && (
               <button
                 onClick={() => setCurrentDate(getTodayString())}
-                style={{
-                  background: darkMode ? '#27272a' : '#f1f5f9',
-                  color: '#f97316',
-                  border: '1px solid #f97316',
-                  borderRadius: '10px',
-                  padding: '4px 8px',
-                  fontSize: '11px',
-                  fontWeight: '700',
-                  cursor: 'pointer'
-                }}
+                style={{ background: darkMode ? '#27272a' : '#f1f5f9', color: '#f97316', border: '1px solid #f97316', borderRadius: '10px', padding: '4px 8px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
               >
                 Reset
               </button>
             )}
-
-            <button 
-              onClick={() => changeDate(1)} 
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '6px' }}
-              aria-label="Next Day"
-            >
+            <button onClick={() => changeDate(1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '6px' }}>
               <ChevronRight size={22} />
             </button>
           </div>
         </div>
 
-        {/* Dedicated Remaining Calories Card */}
+        {/* Status Card */}
         <div style={{
-          background: isOverBudget 
-            ? (darkMode ? '#3b1212' : '#fef2f2') 
-            : (darkMode ? '#0f291e' : '#f0fdf4'),
+          background: isOverBudget ? (darkMode ? '#3b1212' : '#fef2f2') : (darkMode ? '#0f291e' : '#f0fdf4'),
           border: `1.5px solid ${isOverBudget ? '#ef4444' : '#10b981'}`,
           borderRadius: '16px',
           padding: '18px 20px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '10px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-          transition: 'all 0.3s ease'
+          gap: '10px'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {isOverBudget ? (
-                <AlertCircle size={20} color="#ef4444" />
-              ) : (
-                <CheckCircle2 size={20} color="#10b981" />
-              )}
-              <span style={{
-                fontSize: '14px',
-                fontWeight: '700',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-                color: isOverBudget ? '#ef4444' : '#10b981'
-              }}>
+              {isOverBudget ? <AlertCircle size={20} color="#ef4444" /> : <CheckCircle2 size={20} color="#10b981" />}
+              <span style={{ fontSize: '14px', fontWeight: '700', color: isOverBudget ? '#ef4444' : '#10b981' }}>
                 {isOverBudget ? 'Over Budget' : 'Remaining Calories'}
               </span>
             </div>
-
-            <span style={{
-              fontSize: '12px',
-              fontWeight: '600',
-              padding: '4px 8px',
-              borderRadius: '20px',
-              background: isOverBudget ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-              color: isOverBudget ? '#ef4444' : '#10b981'
-            }}>
-              {isOverBudget 
-                ? `${Math.abs(remainingCalories)} kcal over` 
-                : `${Math.round(((goalNumber - totals.calories) / goalNumber) * 100)}% left`}
+            <span style={{ fontSize: '12px', fontWeight: '600', padding: '4px 8px', borderRadius: '20px', background: isOverBudget ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)', color: isOverBudget ? '#ef4444' : '#10b981' }}>
+              {isOverBudget ? `${Math.abs(remainingCalories)} kcal over` : `${Math.round(((goalNumber - totals.calories) / goalNumber) * 100)}% left`}
             </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-            <span style={{
-              fontSize: '34px',
-              fontWeight: '800',
-              lineHeight: 1,
-              color: isOverBudget ? '#ef4444' : (darkMode ? '#34d399' : '#059669')
-            }}>
+            <span style={{ fontSize: '34px', fontWeight: '800', lineHeight: 1, color: isOverBudget ? '#ef4444' : (darkMode ? '#34d399' : '#059669') }}>
               {Math.abs(remainingCalories).toLocaleString()}
             </span>
             <span style={{ fontSize: '15px', fontWeight: '600', color: '#888' }}>
               kcal {isOverBudget ? 'over target' : 'left for today'}
             </span>
           </div>
-
-          {/* Mini progress bar */}
-          <div style={{
-            width: '100%',
-            height: '6px',
-            backgroundColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-            borderRadius: '999px',
-            overflow: 'hidden'
-          }}>
-            <div style={{
-              width: `${Math.min(100, (totals.calories / goalNumber) * 100)}%`,
-              height: '100%',
-              backgroundColor: isOverBudget ? '#ef4444' : '#10b981',
-              borderRadius: '999px',
-              transition: 'width 0.4s ease'
-            }} />
-          </div>
         </div>
 
-        {/* Dashboard Progress Ring Card */}
+        {/* Progress Ring Card */}
         <div style={{
           background: darkMode ? '#1e1e24' : '#ffffff',
           borderRadius: '20px',
@@ -369,19 +494,9 @@ export default function App() {
         }}>
           <div style={{ position: 'relative', width: '180px', height: '180px' }}>
             <svg style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }} viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="40" fill="transparent" stroke={darkMode ? '#33333d' : '#e2e8f0'} strokeWidth="10" />
               <circle
-                cx="50"
-                cy="50"
-                r="40"
-                fill="transparent"
-                stroke={darkMode ? '#33333d' : '#e2e8f0'}
-                strokeWidth="10"
-              />
-              <circle
-                cx="50"
-                cy="50"
-                r="40"
-                fill="transparent"
+                cx="50" cy="50" r="40" fill="transparent"
                 stroke={isOverBudget ? '#ef4444' : '#f97316'}
                 strokeWidth="10"
                 strokeDasharray="251.2"
@@ -390,77 +505,30 @@ export default function App() {
                 style={{ transition: 'stroke-dashoffset 0.5s ease' }}
               />
             </svg>
-            <div style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ fontSize: '32px', fontWeight: '800' }}>{totals.calories}</span>
-              <span style={{ fontSize: '13px', color: '#888', fontWeight: '500' }}>of {goalNumber} kcal</span>
+              <span style={{ fontSize: '13px', color: '#888' }}>of {goalNumber} kcal</span>
             </div>
           </div>
 
-          {/* Calorie Stats Row */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            width: '100%',
-            textAlign: 'center',
-            gap: '12px',
-            borderTop: darkMode ? '1px solid #2e2e38' : '1px solid #f1f5f9',
-            paddingTop: '16px'
-          }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', width: '100%', textAlign: 'center', gap: '12px', borderTop: darkMode ? '1px solid #2e2e38' : '1px solid #f1f5f9', paddingTop: '16px' }}>
             <div>
               <div style={{ fontSize: '13px', color: '#888' }}>Total Eaten</div>
-              <div style={{ fontSize: '20px', fontWeight: '700' }}>
-                {totals.calories} <span style={{ fontSize: '12px', fontWeight: '500' }}>kcal</span>
-              </div>
+              <div style={{ fontSize: '20px', fontWeight: '700' }}>{totals.calories} kcal</div>
             </div>
             <div>
               <div style={{ fontSize: '13px', color: '#888' }}>Target Goal</div>
               <input
                 type="number"
-                value={dailyGoal === '' ? '' : dailyGoal}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setDailyGoal(val === '' ? '' : Number(val));
-                }}
-                onBlur={() => {
-                  if (!dailyGoal || dailyGoal < 100) setDailyGoal(2000);
-                }}
-                placeholder="2000"
-                style={{
-                  width: '90px',
-                  textAlign: 'center',
-                  fontWeight: '700',
-                  fontSize: '18px',
-                  background: darkMode ? '#27272a' : '#f1f5f9',
-                  color: 'inherit',
-                  border: '1px solid rgba(0,0,0,0.1)',
-                  borderRadius: '8px',
-                  padding: '2px 6px'
-                }}
+                value={dailyGoal}
+                onChange={(e) => handleUpdateGoal(e.target.value)}
+                style={{ width: '90px', textAlign: 'center', fontWeight: '700', fontSize: '18px', background: darkMode ? '#27272a' : '#f1f5f9', color: 'inherit', border: '1px solid rgba(0,0,0,0.1)', borderRadius: '8px', padding: '2px 6px' }}
               />
             </div>
           </div>
 
-          {/* Macro Breakdown */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr 1fr',
-            width: '100%',
-            gap: '10px',
-            background: darkMode ? '#26262e' : '#f8fafc',
-            padding: '12px',
-            borderRadius: '12px',
-            textAlign: 'center'
-          }}>
+          {/* Macros */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', width: '100%', gap: '10px', background: darkMode ? '#26262e' : '#f8fafc', padding: '12px', borderRadius: '12px', textAlign: 'center' }}>
             <div>
               <span style={{ fontSize: '12px', color: '#38bdf8', fontWeight: '600' }}>Protein</span>
               <div style={{ fontSize: '16px', fontWeight: '700' }}>{totals.protein}g</div>
@@ -477,12 +545,7 @@ export default function App() {
         </div>
 
         {/* Quick Add Presets */}
-        <div style={{
-          background: darkMode ? '#1e1e24' : '#ffffff',
-          borderRadius: '16px',
-          padding: '16px',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.03)'
-        }}>
+        <div style={{ background: darkMode ? '#1e1e24' : '#ffffff', borderRadius: '16px', padding: '16px' }}>
           <h3 style={{ fontSize: '14px', fontWeight: '700', marginBottom: '10px', color: '#888' }}>QUICK ADD PRESETS</h3>
           <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
             {PRESETS.map((p, idx) => (
@@ -508,15 +571,7 @@ export default function App() {
         </div>
 
         {/* Add Food Form */}
-        <form onSubmit={handleAddEntry} style={{
-          background: darkMode ? '#1e1e24' : '#ffffff',
-          borderRadius: '16px',
-          padding: '16px',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.03)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '12px'
-        }}>
+        <form onSubmit={handleAddEntry} style={{ background: darkMode ? '#1e1e24' : '#ffffff', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <h3 style={{ fontSize: '14px', fontWeight: '700', margin: 0, color: '#888' }}>LOG FOOD</h3>
           
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
@@ -544,16 +599,10 @@ export default function App() {
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
             <input
               type="text"
-              placeholder="Food name (e.g. Rice bowl)"
+              placeholder="Food name"
               value={foodName}
               onChange={(e) => setFoodName(e.target.value)}
-              style={{
-                padding: '10px 12px',
-                borderRadius: '8px',
-                border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
-                background: darkMode ? '#27272a' : '#fff',
-                color: 'inherit'
-              }}
+              style={{ padding: '10px 12px', borderRadius: '8px', border: darkMode ? '1px solid #333' : '1px solid #cbd5e1', background: darkMode ? '#27272a' : '#fff', color: 'inherit' }}
               required
             />
             <input
@@ -561,13 +610,7 @@ export default function App() {
               placeholder="Calories"
               value={calories}
               onChange={(e) => setCalories(e.target.value)}
-              style={{
-                padding: '10px 12px',
-                borderRadius: '8px',
-                border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
-                background: darkMode ? '#27272a' : '#fff',
-                color: 'inherit'
-              }}
+              style={{ padding: '10px 12px', borderRadius: '8px', border: darkMode ? '1px solid #333' : '1px solid #cbd5e1', background: darkMode ? '#27272a' : '#fff', color: 'inherit' }}
               required
             />
           </div>
@@ -578,84 +621,44 @@ export default function App() {
               placeholder="Protein (g)"
               value={protein}
               onChange={(e) => setProtein(e.target.value)}
-              style={{
-                padding: '8px 10px',
-                borderRadius: '8px',
-                border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
-                background: darkMode ? '#27272a' : '#fff',
-                color: 'inherit',
-                fontSize: '13px'
-              }}
+              style={{ padding: '8px 10px', borderRadius: '8px', border: darkMode ? '1px solid #333' : '1px solid #cbd5e1', background: darkMode ? '#27272a' : '#fff', color: 'inherit', fontSize: '13px' }}
             />
             <input
               type="number"
               placeholder="Carbs (g)"
               value={carbs}
               onChange={(e) => setCarbs(e.target.value)}
-              style={{
-                padding: '8px 10px',
-                borderRadius: '8px',
-                border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
-                background: darkMode ? '#27272a' : '#fff',
-                color: 'inherit',
-                fontSize: '13px'
-              }}
+              style={{ padding: '8px 10px', borderRadius: '8px', border: darkMode ? '1px solid #333' : '1px solid #cbd5e1', background: darkMode ? '#27272a' : '#fff', color: 'inherit', fontSize: '13px' }}
             />
             <input
               type="number"
               placeholder="Fat (g)"
               value={fat}
               onChange={(e) => setFat(e.target.value)}
-              style={{
-                padding: '8px 10px',
-                borderRadius: '8px',
-                border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
-                background: darkMode ? '#27272a' : '#fff',
-                color: 'inherit',
-                fontSize: '13px'
-              }}
+              style={{ padding: '8px 10px', borderRadius: '8px', border: darkMode ? '1px solid #333' : '1px solid #cbd5e1', background: darkMode ? '#27272a' : '#fff', color: 'inherit', fontSize: '13px' }}
             />
           </div>
 
           <button
             type="submit"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              padding: '12px',
-              borderRadius: '10px',
-              background: '#f97316',
-              color: '#fff',
-              border: 'none',
-              fontWeight: '700',
-              cursor: 'pointer'
-            }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', borderRadius: '10px', background: '#f97316', color: '#fff', border: 'none', fontWeight: '700', cursor: 'pointer' }}
           >
             <Plus size={18} /> Add Entry
           </button>
         </form>
 
-        {/* Daily Food Log List */}
+        {/* Meal History */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <h3 style={{ fontSize: '15px', fontWeight: '700', margin: '4px 0', color: '#888' }}>
-            LOGS FOR {getDateLabel().toUpperCase()} ({currentEntries.length})
+            LOGS FOR {getDateLabel().toUpperCase()} ({entries.length})
           </h3>
 
-          {currentEntries.length === 0 ? (
-            <div style={{
-              padding: '24px',
-              textAlign: 'center',
-              background: darkMode ? '#1e1e24' : '#ffffff',
-              borderRadius: '14px',
-              color: '#888',
-              fontSize: '14px'
-            }}>
-              No items logged for this day. Tap a preset or add one above!
+          {entries.length === 0 ? (
+            <div style={{ padding: '24px', textAlign: 'center', background: darkMode ? '#1e1e24' : '#ffffff', borderRadius: '14px', color: '#888', fontSize: '14px' }}>
+              No items logged for this day.
             </div>
           ) : (
-            currentEntries.map((item) => (
+            entries.map((item) => (
               <div
                 key={item.id}
                 style={{
@@ -682,13 +685,7 @@ export default function App() {
                   <span style={{ fontWeight: '700', fontSize: '15px' }}>{item.calories} kcal</span>
                   <button
                     onClick={() => handleDeleteEntry(item.id)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#ef4444',
-                      cursor: 'pointer',
-                      padding: '4px'
-                    }}
+                    style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
                   >
                     <Trash2 size={16} />
                   </button>
