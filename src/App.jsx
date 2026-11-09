@@ -198,39 +198,57 @@ export default function App() {
 
   // Image resizing to prevent large payloads
   const resizeImage = (file) => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onerror = () => reject(new Error('Failed to read image file'));
+      reader.onload = () => {
         const img = new Image();
+        img.onerror = () => reject(new Error('Failed to decode image'));
         img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1024;
-          const MAX_HEIGHT = 1024;
-          let width = img.width;
-          let height = img.height;
+          try {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 800;
+            const MAX_HEIGHT = 800;
+            let width = img.naturalWidth || img.width;
+            let height = img.naturalHeight || img.height;
 
-          if (width > height) {
-            if (width > MAX_WIDTH) {
-              height = Math.round((height * MAX_WIDTH) / width);
-              width = MAX_WIDTH;
+            if (width > height) {
+              if (width > MAX_WIDTH) {
+                height = Math.round((height * MAX_WIDTH) / width);
+                width = MAX_WIDTH;
+              }
+            } else {
+              if (height > MAX_HEIGHT) {
+                width = Math.round((width * MAX_HEIGHT) / height);
+                height = MAX_HEIGHT;
+              }
             }
-          } else {
-            if (height > MAX_HEIGHT) {
-              width = Math.round((width * MAX_HEIGHT) / height);
-              height = MAX_HEIGHT;
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            
+            // Draw cleanly to canvas
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Export to JPEG
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            if (!dataUrl || !dataUrl.includes(',')) {
+              // Fallback directly to base64 from raw reader if canvas produces an empty string
+              const fallbackBase64 = reader.result.toString().split(',')[1];
+              resolve(fallbackBase64);
+              return;
             }
+
+            const base64 = dataUrl.split(',')[1];
+            resolve(base64);
+          } catch (err) {
+            // Safe fallback if canvas security or memory triggers
+            const rawBase64 = reader.result.toString().split(',')[1];
+            resolve(rawBase64);
           }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-          const base64 = dataUrl.split(',')[1];
-          resolve(base64);
         };
-        img.src = event.target.result;
+        img.src = reader.result;
       };
       reader.readAsDataURL(file);
     });
