@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Plus, Trash2, ChevronLeft, ChevronRight, Utensils, 
-  Flame, Award, Target, Apple, Coffee, Moon, Sun, AlertCircle, CheckCircle2
+  Flame, Apple, Coffee, Moon, Sun, AlertCircle, CheckCircle2, Calendar
 } from 'lucide-react';
 
 const MEAL_CATEGORIES = [
@@ -24,7 +24,14 @@ const PRESETS = [
 ];
 
 export default function App() {
-  const getTodayString = () => new Date().toISOString().split('T')[0];
+  // Use local time zone format YYYY-MM-DD
+  const getTodayString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   const [currentDate, setCurrentDate] = useState(getTodayString);
   const [dailyGoal, setDailyGoal] = useState(() => {
@@ -117,9 +124,37 @@ export default function App() {
   };
 
   const changeDate = (days) => {
-    const date = new Date(currentDate + 'T00:00:00');
+    const parts = currentDate.split('-').map(Number);
+    const date = new Date(parts[0], parts[1] - 1, parts[2]);
     date.setDate(date.getDate() + days);
-    setCurrentDate(date.toISOString().split('T')[0]);
+    
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    setCurrentDate(`${year}-${month}-${day}`);
+  };
+
+  // Format date header to clearly show Today, Yesterday, or formatted date
+  const getDateLabel = () => {
+    const todayStr = getTodayString();
+    
+    // Yesterday
+    const yDate = new Date();
+    yDate.setDate(yDate.getDate() - 1);
+    const yStr = `${yDate.getFullYear()}-${String(yDate.getMonth() + 1).padStart(2, '0')}-${String(yDate.getDate()).padStart(2, '0')}`;
+
+    // Tomorrow
+    const tDate = new Date();
+    tDate.setDate(tDate.getDate() + 1);
+    const tStr = `${tDate.getFullYear()}-${String(tDate.getMonth() + 1).padStart(2, '0')}-${String(tDate.getDate()).padStart(2, '0')}`;
+
+    if (currentDate === todayStr) return 'Today';
+    if (currentDate === yStr) return 'Yesterday';
+    if (currentDate === tStr) return 'Tomorrow';
+
+    const parts = currentDate.split('-').map(Number);
+    const d = new Date(parts[0], parts[1] - 1, parts[2]);
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   };
 
   return (
@@ -164,50 +199,83 @@ export default function App() {
 
       <main style={{ maxWidth: '560px', margin: '0 auto', padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         
-        {/* Date Selector */}
+        {/* Date Selector with Native Calendar Picker */}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           background: darkMode ? '#1e1e24' : '#ffffff',
-          padding: '10px 16px',
+          padding: '8px 14px',
           borderRadius: '14px',
           boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
         }}>
           <button 
             onClick={() => changeDate(-1)} 
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '6px' }}
+            aria-label="Previous Day"
           >
             <ChevronLeft size={22} />
           </button>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontWeight: '600', fontSize: '15px' }}>{currentDate}</span>
+          {/* Clickable Center Area with Hidden Native Date Input */}
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+            <Calendar size={17} color="#f97316" />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <span style={{ fontWeight: '700', fontSize: '15px', lineHeight: 1.2 }}>
+                {getDateLabel()}
+              </span>
+              <span style={{ fontSize: '11px', color: '#888' }}>
+                {currentDate}
+              </span>
+            </div>
+
+            {/* Invisible native date picker covering the button */}
+            <input
+              type="date"
+              value={currentDate}
+              onChange={(e) => {
+                if (e.target.value) setCurrentDate(e.target.value);
+              }}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                opacity: 0,
+                cursor: 'pointer',
+                fontSize: '16px' // Prevents iOS Safari from zooming on input focus
+              }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             {currentDate !== getTodayString() && (
               <button
                 onClick={() => setCurrentDate(getTodayString())}
                 style={{
-                  background: '#f97316',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '12px',
-                  padding: '3px 8px',
+                  background: darkMode ? '#27272a' : '#f1f5f9',
+                  color: '#f97316',
+                  border: '1px solid #f97316',
+                  borderRadius: '10px',
+                  padding: '4px 8px',
                   fontSize: '11px',
-                  fontWeight: '600',
+                  fontWeight: '700',
                   cursor: 'pointer'
                 }}
               >
-                Today
+                Reset
               </button>
             )}
-          </div>
 
-          <button 
-            onClick={() => changeDate(1)} 
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '6px' }}
-          >
-            <ChevronRight size={22} />
-          </button>
+            <button 
+              onClick={() => changeDate(1)} 
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '6px' }}
+              aria-label="Next Day"
+            >
+              <ChevronRight size={22} />
+            </button>
+          </div>
         </div>
 
         {/* Dedicated Remaining Calories Card */}
@@ -572,7 +640,7 @@ export default function App() {
         {/* Daily Food Log List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <h3 style={{ fontSize: '15px', fontWeight: '700', margin: '4px 0', color: '#888' }}>
-            TODAY'S LOGS ({currentEntries.length})
+            LOGS FOR {getDateLabel().toUpperCase()} ({currentEntries.length})
           </h3>
 
           {currentEntries.length === 0 ? (
