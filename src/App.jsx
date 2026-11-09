@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Trash2, ChevronLeft, ChevronRight, Utensils, 
   Flame, Apple, Coffee, Moon, Sun, AlertCircle, CheckCircle2, 
-  Calendar, LogOut
+  Calendar, LogOut, Camera, Loader2, Sparkles
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -52,7 +52,11 @@ export default function App() {
   const [fat, setFat] = useState('');
   const [darkMode, setDarkMode] = useState(false);
 
-  // Check Supabase session
+  // AI state
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiSuccessMessage, setAiSuccessMessage] = useState('');
+  const fileInputRef = useRef(null);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -66,12 +70,10 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch entries and user goal for selected date
   useEffect(() => {
     if (!session?.user) return;
 
     const fetchDayData = async () => {
-      // 1. Fetch user calorie goal
       const { data: goalData } = await supabase
         .from('user_settings')
         .select('daily_goal')
@@ -82,7 +84,6 @@ export default function App() {
         setDailyGoal(goalData.daily_goal);
       }
 
-      // 2. Fetch meals for active date
       const { data: mealData, error } = await supabase
         .from('meal_entries')
         .select('*')
@@ -107,7 +108,7 @@ export default function App() {
         password: authPassword
       });
       if (error) setAuthError(error.message);
-      else alert('Signup successful! Check your email inbox to confirm your account.');
+      else alert('Signup successful! Check your email to confirm your account.');
     } else {
       const { error } = await supabase.auth.signInWithPassword({
         email: authEmail,
@@ -156,6 +157,7 @@ export default function App() {
       setProtein('');
       setCarbs('');
       setFat('');
+      setAiSuccessMessage('');
     }
   };
 
@@ -191,6 +193,90 @@ export default function App() {
 
     if (!error) {
       setEntries((prev) => prev.filter((item) => item.id !== id));
+    }
+  };
+
+  // Image resizing to prevent large payloads
+  const resizeImage = (file) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 1024;
+          const MAX_HEIGHT = 1024;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height = Math.round((height * MAX_WIDTH) / width);
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width = Math.round((width * MAX_HEIGHT) / height);
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          const base64 = dataUrl.split(',')[1];
+          resolve(base64);
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Handle Photo Selection & Gemini Analysis
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsAnalyzing(true);
+    setAiSuccessMessage('');
+
+    try {
+      const imageBase64 = await resizeImage(file);
+
+      const response = await fetch('/api/analyze-meal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64,
+          mimeType: 'image/jpeg'
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to analyze photo');
+      }
+
+      setFoodName(data.name || 'AI Detected Meal');
+      setCalories(data.calories ? data.calories.toString() : '');
+      setProtein(data.protein ? data.protein.toString() : '');
+      setCarbs(data.carbs ? data.carbs.toString() : '');
+      setFat(data.fat ? data.fat.toString() : '');
+      if (['breakfast', 'lunch', 'dinner', 'snacks'].includes(data.category)) {
+        setActiveCategory(data.category);
+      }
+
+      setAiSuccessMessage('Meal detected by Gemini! Review and tap "Add Entry".');
+    } catch (err) {
+      alert(`AI Analysis error: ${err.message}`);
+    } finally {
+      setIsAnalyzing(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -232,7 +318,6 @@ export default function App() {
     );
   }
 
-  // Auth Screen
   if (!session) {
     return (
       <div style={{
@@ -544,6 +629,78 @@ export default function App() {
           </div>
         </div>
 
+        {/* AI Quick Camera Action */}
+        <div style={{
+          background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+          borderRadius: '16px',
+          padding: '16px',
+          color: '#fff',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          boxShadow: '0 4px 15px rgba(249, 115, 22, 0.25)'
+        }}>
+          <div>
+            <div style={{ fontWeight: '700', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Sparkles size={18} /> AI Meal Scanner
+            </div>
+            <div style={{ fontSize: '12px', opacity: 0.9, marginTop: '2px' }}>
+              Take a photo to estimate calories & macros
+            </div>
+          </div>
+
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            ref={fileInputRef}
+            onChange={handlePhotoUpload}
+            style={{ display: 'none' }}
+          />
+
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isAnalyzing}
+            style={{
+              background: '#fff',
+              color: '#ea580c',
+              border: 'none',
+              borderRadius: '12px',
+              padding: '10px 14px',
+              fontWeight: '700',
+              fontSize: '13px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: isAnalyzing ? 'wait' : 'pointer'
+            }}
+          >
+            {isAnalyzing ? (
+              <>
+                <Loader2 size={16} className="animate-spin" /> Analyzing...
+              </>
+            ) : (
+              <>
+                <Camera size={16} /> Snap Photo
+              </>
+            )}
+          </button>
+        </div>
+
+        {aiSuccessMessage && (
+          <div style={{
+            background: darkMode ? '#143823' : '#dcfce7',
+            border: '1px solid #10b981',
+            color: darkMode ? '#34d399' : '#15803d',
+            padding: '10px 14px',
+            borderRadius: '10px',
+            fontSize: '13px',
+            fontWeight: '500'
+          }}>
+            {aiSuccessMessage}
+          </div>
+        )}
+
         {/* Quick Add Presets */}
         <div style={{ background: darkMode ? '#1e1e24' : '#ffffff', borderRadius: '16px', padding: '16px' }}>
           <h3 style={{ fontSize: '14px', fontWeight: '700', marginBottom: '10px', color: '#888' }}>QUICK ADD PRESETS</h3>
@@ -647,7 +804,7 @@ export default function App() {
           </button>
         </form>
 
-        {/* Meal History */}
+        {/* Cloud Meal History */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <h3 style={{ fontSize: '15px', fontWeight: '700', margin: '4px 0', color: '#888' }}>
             LOGS FOR {getDateLabel().toUpperCase()} ({entries.length})
