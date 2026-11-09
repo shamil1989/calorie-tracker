@@ -196,65 +196,6 @@ export default function App() {
     }
   };
 
-  // Image resizing to prevent large payloads
-  const resizeImage = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error('Failed to read image file'));
-      reader.onload = () => {
-        const img = new Image();
-        img.onerror = () => reject(new Error('Failed to decode image'));
-        img.onload = () => {
-          try {
-            const canvas = document.createElement('canvas');
-            const MAX_WIDTH = 800;
-            const MAX_HEIGHT = 800;
-            let width = img.naturalWidth || img.width;
-            let height = img.naturalHeight || img.height;
-
-            if (width > height) {
-              if (width > MAX_WIDTH) {
-                height = Math.round((height * MAX_WIDTH) / width);
-                width = MAX_WIDTH;
-              }
-            } else {
-              if (height > MAX_HEIGHT) {
-                width = Math.round((width * MAX_HEIGHT) / height);
-                height = MAX_HEIGHT;
-              }
-            }
-
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            
-            // Draw cleanly to canvas
-            ctx.drawImage(img, 0, 0, width, height);
-
-            // Export to JPEG
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-            if (!dataUrl || !dataUrl.includes(',')) {
-              // Fallback directly to base64 from raw reader if canvas produces an empty string
-              const fallbackBase64 = reader.result.toString().split(',')[1];
-              resolve(fallbackBase64);
-              return;
-            }
-
-            const base64 = dataUrl.split(',')[1];
-            resolve(base64);
-          } catch (err) {
-            // Safe fallback if canvas security or memory triggers
-            const rawBase64 = reader.result.toString().split(',')[1];
-            resolve(rawBase64);
-          }
-        };
-        img.src = reader.result;
-      };
-      reader.readAsDataURL(file);
-    });
-  };
-
-  // Handle Photo Selection & Gemini Analysis
   const handlePhotoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -263,38 +204,78 @@ export default function App() {
     setAiSuccessMessage('');
 
     try {
-      const imageBase64 = await resizeImage(file);
+      const base64Data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Failed reading photo.'));
+        reader.onload = () => {
+          const res = reader.result.toString();
+          resolve(res.includes(',') ? res.split(',')[1] : res);
+        };
+        reader.readAsDataURL(file);
+      });
 
-      const response = await fetch('/api/analyze-meal', {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error('VITE_GEMINI_API_KEY is not set in your environment variables.');
+      }
+
+      const prompt = `Analyze this food image. Provide a realistic estimate of the meal summary name, calories, protein (g), carbs (g), fat (g), and category ("breakfast", "lunch", "dinner", or "snacks"). Return JSON only: {"name":"Meal Name","calories":500,"protein":30,"carbs":40,"fat":15,"category":"lunch"}`;
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageBase64,
-          mimeType: 'image/jpeg'
+          contents: [{
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: file.type || 'image/jpeg',
+                  data: base64Data
+                }
+              }
+            ]
+          }],
+          generationConfig: {
+            responseMimeType: 'application/json'
+          }
         })
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to analyze photo');
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error?.message || `API error code: ${res.status}`);
       }
 
-      setFoodName(data.name || 'AI Detected Meal');
-      setCalories(data.calories ? data.calories.toString() : '');
-      setProtein(data.protein ? data.protein.toString() : '');
-      setCarbs(data.carbs ? data.carbs.toString() : '');
-      setFat(data.fat ? data.fat.toString() : '');
-      if (['breakfast', 'lunch', 'dinner', 'snacks'].includes(data.category)) {
-        setActiveCategory(data.category);
+      const resData = await res.json();
+      const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      const cleanJson = rawText.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(cleanJson);
+
+      setFoodName(String(parsed.name || 'AI Analyzed Meal'));
+      setCalories(parsed.calories ? String(Math.round(Number(parsed.calories))) : '0');
+      setProtein(parsed.protein ? String(Math.round(Number(parsed.protein))) : '0');
+      setCarbs(parsed.carbs ? String(Math.round(Number(parsed.carbs))) : '0');
+      setFat(parsed.fat ? String(Math.round(Number(parsed.fat))) : '0');
+
+      if (parsed.category && ['breakfast', 'lunch', 'dinner', 'snacks'].includes(parsed.category.toLowerCase())) {
+        setActiveCategory(parsed.category.toLowerCase());
       }
 
-      setAiSuccessMessage('Meal detected by Gemini! Review and tap "Add Entry".');
+      setAiSuccessMessage('Meal analyzed! Verify the numbers and tap "Add Entry".');
     } catch (err) {
-      alert(`AI Analysis error: ${err.message}`);
+      alert(`AI Scan error: ${err.message}`);
     } finally {
       setIsAnalyzing(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (fileInputRef.current) {
+        try {
+          fileInputRef.current.value = '';
+        } catch {
+          // ignore Safari file input clear quirks
+        }
+      }
     }
   };
 
@@ -647,7 +628,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* AI Quick Camera Action */}
+        {/* AI Scanner Card */}
         <div style={{
           background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
           borderRadius: '16px',
@@ -822,7 +803,7 @@ export default function App() {
           </button>
         </form>
 
-        {/* Cloud Meal History */}
+        {/* Meal History */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <h3 style={{ fontSize: '15px', fontWeight: '700', margin: '4px 0', color: '#888' }}>
             LOGS FOR {getDateLabel().toUpperCase()} ({entries.length})
