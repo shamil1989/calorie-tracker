@@ -67,7 +67,7 @@ export default function App() {
 
   // Account Modal & Profile State
   const [showAccountModal, setShowAccountModal] = useState(false);
-  const [activeAccountTab, setActiveAccountTab] = useState('about'); // 'about' | 'body'
+  const [activeAccountTab, setActiveAccountTab] = useState('about');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [location, setLocation] = useState('');
@@ -214,7 +214,6 @@ export default function App() {
     });
   };
 
-  // Helper to compute initials for the header avatar button
   const getUserInitials = () => {
     const f = firstName ? firstName.trim().charAt(0).toUpperCase() : '';
     const l = lastName ? lastName.trim().charAt(0).toUpperCase() : '';
@@ -223,7 +222,6 @@ export default function App() {
     return null;
   };
 
-  // Save "About the User" profile tab
   const handleSaveAboutUser = async (e) => {
     e.preventDefault();
     if (!session?.user) return;
@@ -246,7 +244,6 @@ export default function App() {
     }
   };
 
-  // Profile Assessment & AI Goal Recommendation
   const handleCalculateAiGoal = async (e) => {
     e.preventDefault();
     if (!weightLbs || !heightFeet) {
@@ -968,7 +965,6 @@ Return strictly pure JSON with no markdown wrapping:
           <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>Calorie Tracker</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* Dynamic Initials Avatar Button */}
           <button
             onClick={() => setShowAccountModal(true)}
             title="My Account"
@@ -1668,7 +1664,7 @@ Return strictly pure JSON with no markdown wrapping:
                     <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>First Name</label>
                     <input
                       type="text"
-                      placeholder="e.g. Shamil"
+                      placeholder="John"
                       value={firstName}
                       onChange={(e) => setFirstName(e.target.value)}
                       style={{
@@ -1687,7 +1683,7 @@ Return strictly pure JSON with no markdown wrapping:
                     <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Last Name</label>
                     <input
                       type="text"
-                      placeholder="e.g. Ramazanov"
+                      placeholder="Doe"
                       value={lastName}
                       onChange={(e) => setLastName(e.target.value)}
                       style={{
@@ -1710,7 +1706,7 @@ Return strictly pure JSON with no markdown wrapping:
                     <MapPin size={16} color="#888" style={{ position: 'absolute', left: '12px' }} />
                     <input
                       type="text"
-                      placeholder="e.g. Kingwood, Texas"
+                      placeholder="City, State"
                       value={location}
                       onChange={(e) => setLocation(e.target.value)}
                       style={{
@@ -1829,7 +1825,7 @@ Return strictly pure JSON with no markdown wrapping:
                       <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Weight (lbs)</label>
                       <input
                         type="number"
-                        placeholder="e.g. 185"
+                        placeholder="e.g. 175"
                         value={weightLbs}
                         onChange={(e) => setWeightLbs(e.target.value)}
                         required
@@ -1849,7 +1845,7 @@ Return strictly pure JSON with no markdown wrapping:
                       <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Age (years)</label>
                       <input
                         type="number"
-                        placeholder="e.g. 30"
+                        placeholder="e.g. 28"
                         value={age}
                         onChange={(e) => setAge(e.target.value)}
                         style={{
