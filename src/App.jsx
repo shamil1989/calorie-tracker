@@ -243,7 +243,6 @@ export default function App() {
     }
   };
 
-  // Compresses high-res camera photos to ~100-150KB for fast transfer & sub-2-second AI analysis
   const compressImage = (file) => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -304,11 +303,10 @@ export default function App() {
 
       const prompt = `Analyze this food image. Provide a realistic estimate of the meal summary name, calories, protein (g), carbs (g), fat (g), and category ("breakfast", "lunch", "dinner", or "snacks"). Return JSON only: {"name":"Meal Name","calories":500,"protein":30,"carbs":40,"fat":15,"category":"lunch"}`;
 
-      // Cascade across models in case one experiences a temporary 503 high-demand spike
       const modelsToTry = [
-        'gemini-3.8-flash',
         'gemini-2.5-flash',
-        'gemini-1.5-flash-8b'
+        'gemini-1.5-flash-8b',
+        'gemini-1.5-flash'
       ];
 
       let res;
@@ -339,7 +337,6 @@ export default function App() {
             })
           });
 
-          // Fall back to next model on high demand or rate limits
           if (res.status === 503 || res.status === 429) {
             continue;
           }
@@ -446,7 +443,8 @@ export default function App() {
           padding: '30px',
           borderRadius: '16px',
           color: '#fff',
-          boxShadow: '0 8px 30px rgba(0,0,0,0.3)'
+          boxShadow: '0 8px 30px rgba(0,0,0,0.3)',
+          boxSizing: 'border-box'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '20px' }}>
             <KeyRound color="#f97316" size={30} />
@@ -471,6 +469,9 @@ export default function App() {
               onChange={(e) => setNewPassword(e.target.value)}
               required
               style={{
+                width: '100%',
+                minWidth: 0,
+                boxSizing: 'border-box',
                 padding: '12px',
                 borderRadius: '8px',
                 border: '1px solid #334155',
@@ -482,6 +483,8 @@ export default function App() {
             <button
               type="submit"
               style={{
+                width: '100%',
+                boxSizing: 'border-box',
                 padding: '12px',
                 borderRadius: '8px',
                 background: '#f97316',
@@ -519,7 +522,8 @@ export default function App() {
           padding: '30px',
           borderRadius: '16px',
           color: '#fff',
-          boxShadow: '0 8px 30px rgba(0,0,0,0.3)'
+          boxShadow: '0 8px 30px rgba(0,0,0,0.3)',
+          boxSizing: 'border-box'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '20px' }}>
             <Flame color="#f97316" size={32} />
@@ -549,6 +553,9 @@ export default function App() {
                 onChange={(e) => setAuthEmail(e.target.value)}
                 required
                 style={{
+                  width: '100%',
+                  minWidth: 0,
+                  boxSizing: 'border-box',
                   padding: '12px',
                   borderRadius: '8px',
                   border: '1px solid #334155',
@@ -560,6 +567,8 @@ export default function App() {
               <button
                 type="submit"
                 style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
                   padding: '12px',
                   borderRadius: '8px',
                   background: '#f97316',
@@ -596,6 +605,9 @@ export default function App() {
                 onChange={(e) => setAuthEmail(e.target.value)}
                 required
                 style={{
+                  width: '100%',
+                  minWidth: 0,
+                  boxSizing: 'border-box',
                   padding: '12px',
                   borderRadius: '8px',
                   border: '1px solid #334155',
@@ -611,6 +623,9 @@ export default function App() {
                 onChange={(e) => setAuthPassword(e.target.value)}
                 required
                 style={{
+                  width: '100%',
+                  minWidth: 0,
+                  boxSizing: 'border-box',
                   padding: '12px',
                   borderRadius: '8px',
                   border: '1px solid #334155',
@@ -642,6 +657,8 @@ export default function App() {
               <button
                 type="submit"
                 style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
                   padding: '12px',
                   borderRadius: '8px',
                   background: '#f97316',
@@ -697,10 +714,13 @@ export default function App() {
   return (
     <div style={{
       minHeight: '100vh',
+      maxWidth: '100vw',
+      overflowX: 'hidden',
       backgroundColor: darkMode ? '#121212' : '#f8fafc',
       color: darkMode ? '#f1f5f9' : '#0f172a',
       fontFamily: 'system-ui, -apple-system, sans-serif',
       paddingBottom: '60px',
+      boxSizing: 'border-box',
       transition: 'background-color 0.2s, color 0.2s'
     }}>
       {/* Top Header */}
@@ -710,7 +730,8 @@ export default function App() {
         padding: '16px 20px',
         display: 'flex',
         justifyContent: 'space-between',
-        alignItems: 'center'
+        alignItems: 'center',
+        boxSizing: 'border-box'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Flame color="#f97316" size={26} />
@@ -747,7 +768,7 @@ export default function App() {
         </div>
       </header>
 
-      <main style={{ maxWidth: '560px', margin: '0 auto', padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <main style={{ maxWidth: '560px', margin: '0 auto', padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '16px', boxSizing: 'border-box', width: '100%' }}>
         
         {/* Date Selector */}
         <div style={{
@@ -757,7 +778,9 @@ export default function App() {
           background: darkMode ? '#1e1e24' : '#ffffff',
           padding: '8px 14px',
           borderRadius: '14px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+          boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+          boxSizing: 'border-box',
+          width: '100%'
         }}>
           <button onClick={() => changeDate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '6px' }}>
             <ChevronLeft size={22} />
@@ -800,7 +823,9 @@ export default function App() {
           padding: '18px 20px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '10px'
+          gap: '10px',
+          boxSizing: 'border-box',
+          width: '100%'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -833,7 +858,9 @@ export default function App() {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: '20px'
+          gap: '20px',
+          boxSizing: 'border-box',
+          width: '100%'
         }}>
           <div style={{ position: 'relative', width: '180px', height: '180px' }}>
             <svg style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }} viewBox="0 0 100 100">
@@ -854,7 +881,7 @@ export default function App() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', width: '100%', textAlign: 'center', gap: '12px', borderTop: darkMode ? '1px solid #2e2e38' : '1px solid #f1f5f9', paddingTop: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', width: '100%', textAlign: 'center', gap: '12px', borderTop: darkMode ? '1px solid #2e2e38' : '1px solid #f1f5f9', paddingTop: '16px', boxSizing: 'border-box' }}>
             <div>
               <div style={{ fontSize: '13px', color: '#888' }}>Total Eaten</div>
               <div style={{ fontSize: '20px', fontWeight: '700' }}>{totals.calories} kcal</div>
@@ -865,13 +892,13 @@ export default function App() {
                 type="number"
                 value={dailyGoal}
                 onChange={(e) => handleUpdateGoal(e.target.value)}
-                style={{ width: '90px', textAlign: 'center', fontWeight: '700', fontSize: '18px', background: darkMode ? '#27272a' : '#f1f5f9', color: 'inherit', border: '1px solid rgba(0,0,0,0.1)', borderRadius: '8px', padding: '2px 6px' }}
+                style={{ width: '90px', textAlign: 'center', fontWeight: '700', fontSize: '18px', background: darkMode ? '#27272a' : '#f1f5f9', color: 'inherit', border: '1px solid rgba(0,0,0,0.1)', borderRadius: '8px', padding: '2px 6px', boxSizing: 'border-box' }}
               />
             </div>
           </div>
 
           {/* Macros */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', width: '100%', gap: '10px', background: darkMode ? '#26262e' : '#f8fafc', padding: '12px', borderRadius: '12px', textAlign: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', width: '100%', gap: '10px', background: darkMode ? '#26262e' : '#f8fafc', padding: '12px', borderRadius: '12px', textAlign: 'center', boxSizing: 'border-box' }}>
             <div>
               <span style={{ fontSize: '12px', color: '#38bdf8', fontWeight: '600' }}>Protein</span>
               <div style={{ fontSize: '16px', fontWeight: '700' }}>{totals.protein}g</div>
@@ -896,7 +923,9 @@ export default function App() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          boxShadow: '0 4px 15px rgba(249, 115, 22, 0.25)'
+          boxShadow: '0 4px 15px rgba(249, 115, 22, 0.25)',
+          boxSizing: 'border-box',
+          width: '100%'
         }}>
           <div>
             <div style={{ fontWeight: '700', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -953,14 +982,16 @@ export default function App() {
             padding: '10px 14px',
             borderRadius: '10px',
             fontSize: '13px',
-            fontWeight: '500'
+            fontWeight: '500',
+            boxSizing: 'border-box',
+            width: '100%'
           }}>
             {aiSuccessMessage}
           </div>
         )}
 
         {/* Quick Add Presets */}
-        <div style={{ background: darkMode ? '#1e1e24' : '#ffffff', borderRadius: '16px', padding: '16px' }}>
+        <div style={{ background: darkMode ? '#1e1e24' : '#ffffff', borderRadius: '16px', padding: '16px', boxSizing: 'border-box', width: '100%' }}>
           <h3 style={{ fontSize: '14px', fontWeight: '700', marginBottom: '10px', color: '#888' }}>QUICK ADD PRESETS</h3>
           <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
             {PRESETS.map((p, idx) => (
@@ -986,10 +1017,10 @@ export default function App() {
         </div>
 
         {/* Add Food Form */}
-        <form onSubmit={handleAddEntry} style={{ background: darkMode ? '#1e1e24' : '#ffffff', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <form onSubmit={handleAddEntry} style={{ background: darkMode ? '#1e1e24' : '#ffffff', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', boxSizing: 'border-box', width: '100%' }}>
           <h3 style={{ fontSize: '14px', fontWeight: '700', margin: 0, color: '#888' }}>LOG FOOD</h3>
           
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', width: '100%', boxSizing: 'border-box' }}>
             {MEAL_CATEGORIES.map((cat) => (
               <button
                 key={cat.id}
@@ -1003,7 +1034,9 @@ export default function App() {
                   fontSize: '12px',
                   fontWeight: '600',
                   background: activeCategory === cat.id ? '#f97316' : (darkMode ? '#27272a' : '#f1f5f9'),
-                  color: activeCategory === cat.id ? '#fff' : 'inherit'
+                  color: activeCategory === cat.id ? '#fff' : 'inherit',
+                  minWidth: 0,
+                  boxSizing: 'border-box'
                 }}
               >
                 {cat.name}
@@ -1011,13 +1044,23 @@ export default function App() {
             ))}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
             <input
               type="text"
               placeholder="Food name"
               value={foodName}
               onChange={(e) => setFoodName(e.target.value)}
-              style={{ padding: '10px 12px', borderRadius: '8px', border: darkMode ? '1px solid #333' : '1px solid #cbd5e1', background: darkMode ? '#27272a' : '#fff', color: 'inherit' }}
+              style={{
+                width: '100%',
+                minWidth: 0,
+                boxSizing: 'border-box',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                background: darkMode ? '#27272a' : '#fff',
+                color: 'inherit',
+                fontSize: '14px'
+              }}
               required
             />
             <input
@@ -1025,51 +1068,92 @@ export default function App() {
               placeholder="Calories"
               value={calories}
               onChange={(e) => setCalories(e.target.value)}
-              style={{ padding: '10px 12px', borderRadius: '8px', border: darkMode ? '1px solid #333' : '1px solid #cbd5e1', background: darkMode ? '#27272a' : '#fff', color: 'inherit' }}
+              style={{
+                width: '100%',
+                minWidth: 0,
+                boxSizing: 'border-box',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                background: darkMode ? '#27272a' : '#fff',
+                color: 'inherit',
+                fontSize: '14px'
+              }}
               required
             />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+          {/* Three-Column Macro Inputs with Guaranteed Container Bounds */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
             <input
               type="number"
               placeholder="Protein (g)"
               value={protein}
               onChange={(e) => setProtein(e.target.value)}
-              style={{ padding: '8px 10px', borderRadius: '8px', border: darkMode ? '1px solid #333' : '1px solid #cbd5e1', background: darkMode ? '#27272a' : '#fff', color: 'inherit', fontSize: '13px' }}
+              style={{
+                width: '100%',
+                minWidth: 0,
+                boxSizing: 'border-box',
+                padding: '8px 10px',
+                borderRadius: '8px',
+                border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                background: darkMode ? '#27272a' : '#fff',
+                color: 'inherit',
+                fontSize: '13px'
+              }}
             />
             <input
               type="number"
               placeholder="Carbs (g)"
               value={carbs}
               onChange={(e) => setCarbs(e.target.value)}
-              style={{ padding: '8px 10px', borderRadius: '8px', border: darkMode ? '1px solid #333' : '1px solid #cbd5e1', background: darkMode ? '#27272a' : '#fff', color: 'inherit', fontSize: '13px' }}
+              style={{
+                width: '100%',
+                minWidth: 0,
+                boxSizing: 'border-box',
+                padding: '8px 10px',
+                borderRadius: '8px',
+                border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                background: darkMode ? '#27272a' : '#fff',
+                color: 'inherit',
+                fontSize: '13px'
+              }}
             />
             <input
               type="number"
               placeholder="Fat (g)"
               value={fat}
               onChange={(e) => setFat(e.target.value)}
-              style={{ padding: '8px 10px', borderRadius: '8px', border: darkMode ? '1px solid #333' : '1px solid #cbd5e1', background: darkMode ? '#27272a' : '#fff', color: 'inherit', fontSize: '13px' }}
+              style={{
+                width: '100%',
+                minWidth: 0,
+                boxSizing: 'border-box',
+                padding: '8px 10px',
+                borderRadius: '8px',
+                border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                background: darkMode ? '#27272a' : '#fff',
+                color: 'inherit',
+                fontSize: '13px'
+              }}
             />
           </div>
 
           <button
             type="submit"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', borderRadius: '10px', background: '#f97316', color: '#fff', border: 'none', fontWeight: '700', cursor: 'pointer' }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', borderRadius: '10px', background: '#f97316', color: '#fff', border: 'none', fontWeight: '700', cursor: 'pointer', width: '100%', boxSizing: 'border-box' }}
           >
             <Plus size={18} /> Add Entry
           </button>
         </form>
 
         {/* Meal History */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
           <h3 style={{ fontSize: '15px', fontWeight: '700', margin: '4px 0', color: '#888' }}>
             LOGS FOR {getDateLabel().toUpperCase()} ({entries.length})
           </h3>
 
           {entries.length === 0 ? (
-            <div style={{ padding: '24px', textAlign: 'center', background: darkMode ? '#1e1e24' : '#ffffff', borderRadius: '14px', color: '#888', fontSize: '14px' }}>
+            <div style={{ padding: '24px', textAlign: 'center', background: darkMode ? '#1e1e24' : '#ffffff', borderRadius: '14px', color: '#888', fontSize: '14px', boxSizing: 'border-box', width: '100%' }}>
               No items logged for this day.
             </div>
           ) : (
@@ -1083,7 +1167,9 @@ export default function App() {
                   padding: '12px 16px',
                   borderRadius: '12px',
                   background: darkMode ? '#1e1e24' : '#ffffff',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+                  boxSizing: 'border-box',
+                  width: '100%'
                 }}
               >
                 <div>
