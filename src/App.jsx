@@ -196,6 +196,50 @@ export default function App() {
     }
   };
 
+  // Resizes phone camera photos to ~100-150KB for fast transfer & rapid Gemini analysis
+  const compressImage = (file) => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const MAX_DIM = 900;
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+
+        if (width > height && width > MAX_DIM) {
+          height = Math.round((height * MAX_DIM) / width);
+          width = MAX_DIM;
+        } else if (height > MAX_DIM) {
+          width = Math.round((width * MAX_DIM) / height);
+          height = MAX_DIM;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+        resolve(dataUrl.split(',')[1]);
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        const reader = new FileReader();
+        reader.onload = () => {
+          const res = reader.result.toString();
+          resolve(res.includes(',') ? res.split(',')[1] : res);
+        };
+        reader.readAsDataURL(file);
+      };
+
+      img.src = objectUrl;
+    });
+  };
+
   const handlePhotoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -204,43 +248,50 @@ export default function App() {
     setAiSuccessMessage('');
 
     try {
-      const base64Data = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(new Error('Failed reading photo.'));
-        reader.onload = () => {
-          const res = reader.result.toString();
-          resolve(res.includes(',') ? res.split(',')[1] : res);
-        };
-        reader.readAsDataURL(file);
-      });
+      const base64Data = await compressImage(file);
 
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) {
-        throw new Error('VITE_GEMINI_API_KEY is not set in your environment variables.');
+        throw new Error('VITE_GEMINI_API_KEY is not configured in your environment.');
       }
 
       const prompt = `Analyze this food image. Provide a realistic estimate of the meal summary name, calories, protein (g), carbs (g), fat (g), and category ("breakfast", "lunch", "dinner", or "snacks"). Return JSON only: {"name":"Meal Name","calories":500,"protein":30,"carbs":40,"fat":15,"category":"lunch"}`;
 
-const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: prompt },
-              {
-                inlineData: {
-                  mimeType: file.type || 'image/jpeg',
-                  data: base64Data
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
+
+      let res;
+      let attempts = 0;
+      const maxAttempts = 2;
+
+      while (attempts < maxAttempts) {
+        attempts++;
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: prompt },
+                {
+                  inlineData: {
+                    mimeType: 'image/jpeg',
+                    data: base64Data
+                  }
                 }
-              }
-            ]
-          }],
-          generationConfig: {
-            responseMimeType: 'application/json'
-          }
-        })
-      });
+              ]
+            }],
+            generationConfig: {
+              responseMimeType: 'application/json'
+            }
+          })
+        });
+
+        if (res.status === 503 && attempts < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          continue;
+        }
+        break;
+      }
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
@@ -271,7 +322,7 @@ const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-
         try {
           fileInputRef.current.value = '';
         } catch {
-          // ignore Safari file input clear quirks
+          // ignore Safari file reset quirks
         }
       }
     }
