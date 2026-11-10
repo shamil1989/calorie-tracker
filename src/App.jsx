@@ -84,25 +84,29 @@ export default function App() {
     if (!session?.user) return;
 
     const fetchDayData = async () => {
-      const { data: goalData } = await supabase
-        .from('user_settings')
-        .select('daily_goal')
-        .eq('user_id', session.user.id)
-        .maybeSingle();
+      try {
+        const { data: goalData } = await supabase
+          .from('user_settings')
+          .select('daily_goal')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
 
-      if (goalData?.daily_goal) {
-        setDailyGoal(goalData.daily_goal);
-      }
+        if (goalData?.daily_goal) {
+          setDailyGoal(goalData.daily_goal);
+        }
 
-      const { data: mealData, error } = await supabase
-        .from('meal_entries')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .eq('date', currentDate)
-        .order('created_at', { ascending: true });
+        const { data: mealData, error } = await supabase
+          .from('meal_entries')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .eq('date', currentDate)
+          .order('created_at', { ascending: true });
 
-      if (!error && mealData) {
-        setEntries(mealData);
+        if (!error && Array.isArray(mealData)) {
+          setEntries(mealData);
+        }
+      } catch (err) {
+        console.error('Failed to load meal data:', err);
       }
     };
 
@@ -192,12 +196,13 @@ export default function App() {
   };
 
   const handleStartEdit = (item) => {
+    if (!item) return;
     setEditingEntryId(item.id);
     setFoodName(item.name || '');
-    setCalories(item.calories !== undefined ? String(item.calories) : '');
-    setProtein(item.protein !== undefined ? String(item.protein) : '');
-    setCarbs(item.carbs !== undefined ? String(item.carbs) : '');
-    setFat(item.fat !== undefined ? String(item.fat) : '');
+    setCalories(item.calories !== undefined && item.calories !== null ? String(item.calories) : '');
+    setProtein(item.protein !== undefined && item.protein !== null ? String(item.protein) : '');
+    setCarbs(item.carbs !== undefined && item.carbs !== null ? String(item.carbs) : '');
+    setFat(item.fat !== undefined && item.fat !== null ? String(item.fat) : '');
     if (item.category && ['breakfast', 'lunch', 'dinner', 'snacks'].includes(item.category.toLowerCase())) {
       setActiveCategory(item.category.toLowerCase());
     }
@@ -210,56 +215,79 @@ export default function App() {
     e.preventDefault();
     if (!foodName || !calories || !session?.user) return;
 
+    const parsedCalories = Number(calories) || 0;
+    const parsedProtein = Number(protein) || 0;
+    const parsedCarbs = Number(carbs) || 0;
+    const parsedFat = Number(fat) || 0;
+
     if (editingEntryId) {
-      // Update existing item
       const updatedFields = {
-        name: foodName,
-        calories: Number(calories),
-        protein: Number(protein) || 0,
-        carbs: Number(carbs) || 0,
-        fat: Number(fat) || 0,
+        name: foodName.trim(),
+        calories: parsedCalories,
+        protein: parsedProtein,
+        carbs: parsedCarbs,
+        fat: parsedFat,
         category: activeCategory
       };
 
-      const { data, error } = await supabase
-        .from('meal_entries')
-        .update(updatedFields)
-        .eq('id', editingEntryId)
-        .select();
+      try {
+        const { data, error } = await supabase
+          .from('meal_entries')
+          .update(updatedFields)
+          .eq('id', editingEntryId)
+          .eq('user_id', session.user.id)
+          .select();
 
-      if (!error && data) {
-        setEntries((prev) => prev.map((item) => (item.id === editingEntryId ? data[0] : item)));
+        if (error) {
+          alert(`Could not update entry: ${error.message}`);
+          return;
+        }
+
+        // Safe fallback: use returned row if available, otherwise update in-memory object safely
+        const updatedRow = (data && data.length > 0) 
+          ? data[0] 
+          : { id: editingEntryId, date: currentDate, user_id: session.user.id, ...updatedFields };
+
+        setEntries((prev) => prev.map((item) => (item.id === editingEntryId ? updatedRow : item)));
         resetForm();
-      } else if (error) {
-        alert(`Failed to update log: ${error.message}`);
+      } catch (err) {
+        alert(`Error saving edit: ${err.message}`);
       }
     } else {
-      // Create new item
       const newRecord = {
         user_id: session.user.id,
         date: currentDate,
-        name: foodName,
-        calories: Number(calories),
-        protein: Number(protein) || 0,
-        carbs: Number(carbs) || 0,
-        fat: Number(fat) || 0,
+        name: foodName.trim(),
+        calories: parsedCalories,
+        protein: parsedProtein,
+        carbs: parsedCarbs,
+        fat: parsedFat,
         category: activeCategory
       };
 
-      const { data, error } = await supabase
-        .from('meal_entries')
-        .insert([newRecord])
-        .select();
+      try {
+        const { data, error } = await supabase
+          .from('meal_entries')
+          .insert([newRecord])
+          .select();
 
-      if (!error && data) {
-        setEntries((prev) => [...prev, data[0]]);
+        if (error) {
+          alert(`Could not add entry: ${error.message}`);
+          return;
+        }
+
+        if (data && data.length > 0) {
+          setEntries((prev) => [...prev, data[0]]);
+        }
         resetForm();
+      } catch (err) {
+        alert(`Error adding entry: ${err.message}`);
       }
     }
   };
 
   const handleAddPreset = async (item) => {
-    if (!session?.user) return;
+    if (!session?.user || !item) return;
 
     const newRecord = {
       user_id: session.user.id,
@@ -272,13 +300,17 @@ export default function App() {
       category: item.category
     };
 
-    const { data, error } = await supabase
-      .from('meal_entries')
-      .insert([newRecord])
-      .select();
+    try {
+      const { data, error } = await supabase
+        .from('meal_entries')
+        .insert([newRecord])
+        .select();
 
-    if (!error && data) {
-      setEntries((prev) => [...prev, data[0]]);
+      if (!error && data && data.length > 0) {
+        setEntries((prev) => [...prev, data[0]]);
+      }
+    } catch (err) {
+      console.error('Failed to add preset:', err);
     }
   };
 
@@ -286,13 +318,18 @@ export default function App() {
     if (editingEntryId === id) {
       resetForm();
     }
-    const { error } = await supabase
-      .from('meal_entries')
-      .delete()
-      .eq('id', id);
+    try {
+      const { error } = await supabase
+        .from('meal_entries')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', session.user.id);
 
-    if (!error) {
-      setEntries((prev) => prev.filter((item) => item.id !== id));
+      if (!error) {
+        setEntries((prev) => prev.filter((item) => item.id !== id));
+      }
+    } catch (err) {
+      console.error('Failed to delete entry:', err);
     }
   };
 
@@ -455,7 +492,6 @@ export default function App() {
     );
   }
 
-  // Active password recovery flow (after clicking link in email)
   if (isRecoverySession) {
     return (
       <div style={{
@@ -537,7 +573,6 @@ export default function App() {
     );
   }
 
-  // Login / Signup / Password Reset Request view
   if (!session) {
     return (
       <div style={{
@@ -733,12 +768,12 @@ export default function App() {
     );
   }
 
-  const totals = entries.reduce(
+  const totals = (entries || []).reduce(
     (acc, item) => ({
-      calories: acc.calories + (Number(item.calories) || 0),
-      protein: acc.protein + (Number(item.protein) || 0),
-      carbs: acc.carbs + (Number(item.carbs) || 0),
-      fat: acc.fat + (Number(item.fat) || 0),
+      calories: acc.calories + (Number(item?.calories) || 0),
+      protein: acc.protein + (Number(item?.protein) || 0),
+      carbs: acc.carbs + (Number(item?.carbs) || 0),
+      fat: acc.fat + (Number(item?.fat) || 0),
     }),
     { calories: 0, protein: 0, carbs: 0, fat: 0 }
   );
@@ -760,7 +795,7 @@ export default function App() {
       boxSizing: 'border-box',
       transition: 'background-color 0.2s, color 0.2s'
     }}>
-      {/* Top Header with iOS Dynamic Island & Status Bar Padding */}
+      {/* Top Header */}
       <header style={{
         maxWidth: '560px',
         margin: '0 auto',
@@ -1254,59 +1289,62 @@ export default function App() {
         {/* Meal History */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
           <h3 style={{ fontSize: '15px', fontWeight: '700', margin: '4px 0', color: '#888' }}>
-            LOGS FOR {getDateLabel().toUpperCase()} ({entries.length})
+            LOGS FOR {getDateLabel().toUpperCase()} ({(entries || []).length})
           </h3>
 
-          {entries.length === 0 ? (
+          {(!entries || entries.length === 0) ? (
             <div style={{ padding: '24px', textAlign: 'center', background: darkMode ? '#1e1e24' : '#ffffff', borderRadius: '14px', color: '#888', fontSize: '14px', boxSizing: 'border-box', width: '100%' }}>
               No items logged for this day.
             </div>
           ) : (
-            entries.map((item) => (
-              <div
-                key={item.id}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '12px 16px',
-                  borderRadius: '12px',
-                  background: darkMode ? '#1e1e24' : '#ffffff',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
-                  boxSizing: 'border-box',
-                  width: '100%',
-                  border: editingEntryId === item.id ? '1.5px solid #f97316' : 'none'
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: '600', fontSize: '15px' }}>{item.name}</div>
-                  <div style={{ fontSize: '12px', color: '#888', display: 'flex', gap: '8px', marginTop: '2px' }}>
-                    <span style={{ textTransform: 'capitalize', color: '#f97316', fontWeight: '500' }}>{item.category}</span>
-                    <span>• P: {item.protein}g</span>
-                    <span>• C: {item.carbs}g</span>
-                    <span>• F: {item.fat}g</span>
+            entries.map((item) => {
+              if (!item) return null;
+              return (
+                <div
+                  key={item.id}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px 16px',
+                    borderRadius: '12px',
+                    background: darkMode ? '#1e1e24' : '#ffffff',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+                    boxSizing: 'border-box',
+                    width: '100%',
+                    border: editingEntryId === item.id ? '1.5px solid #f97316' : 'none'
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: '600', fontSize: '15px' }}>{item.name || 'Unnamed Food'}</div>
+                    <div style={{ fontSize: '12px', color: '#888', display: 'flex', gap: '8px', marginTop: '2px' }}>
+                      <span style={{ textTransform: 'capitalize', color: '#f97316', fontWeight: '500' }}>{item.category || 'General'}</span>
+                      <span>• P: {item.protein ?? 0}g</span>
+                      <span>• C: {item.carbs ?? 0}g</span>
+                      <span>• F: {item.fat ?? 0}g</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontWeight: '700', fontSize: '15px' }}>{item.calories ?? 0} kcal</span>
+                    <button
+                      onClick={() => handleStartEdit(item)}
+                      title="Edit entry"
+                      style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: '4px' }}
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteEntry(item.id)}
+                      title="Delete entry"
+                      style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
                   </div>
                 </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontWeight: '700', fontSize: '15px' }}>{item.calories} kcal</span>
-                  <button
-                    onClick={() => handleStartEdit(item)}
-                    title="Edit entry"
-                    style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: '4px' }}
-                  >
-                    <Edit2 size={16} />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteEntry(item.id)}
-                    title="Delete entry"
-                    style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </main>
