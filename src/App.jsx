@@ -196,7 +196,7 @@ export default function App() {
     }
   };
 
-  // Resizes phone camera photos to ~100-150KB for fast transfer & rapid Gemini analysis
+  // Compresses high-res camera photos to ~100-150KB for fast uploads and rapid analysis
   const compressImage = (file) => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -252,50 +252,64 @@ export default function App() {
 
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) {
-        throw new Error('VITE_GEMINI_API_KEY is not configured in your environment.');
+        throw new Error('VITE_GEMINI_API_KEY is not configured in your environment variables.');
       }
 
       const prompt = `Analyze this food image. Provide a realistic estimate of the meal summary name, calories, protein (g), carbs (g), fat (g), and category ("breakfast", "lunch", "dinner", or "snacks"). Return JSON only: {"name":"Meal Name","calories":500,"protein":30,"carbs":40,"fat":15,"category":"lunch"}`;
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
+      // Cascade across models in case one experiences a temporary 503 high-demand spike
+      const modelsToTry = [
+        'gemini-3.8-flash',
+        'gemini-2.5-flash',
+        'gemini-1.5-flash-8b'
+      ];
 
       let res;
-      let attempts = 0;
-      const maxAttempts = 2;
+      let lastErrorMessage = '';
 
-      while (attempts < maxAttempts) {
-        attempts++;
-        res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { text: prompt },
-                {
-                  inlineData: {
-                    mimeType: 'image/jpeg',
-                    data: base64Data
+      for (const model of modelsToTry) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+        try {
+          res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { text: prompt },
+                  {
+                    inlineData: {
+                      mimeType: 'image/jpeg',
+                      data: base64Data
+                    }
                   }
-                }
-              ]
-            }],
-            generationConfig: {
-              responseMimeType: 'application/json'
-            }
-          })
-        });
+                ]
+              }],
+              generationConfig: {
+                responseMimeType: 'application/json'
+              }
+            })
+          });
 
-        if (res.status === 503 && attempts < maxAttempts) {
-          await new Promise((resolve) => setTimeout(resolve, 1500));
-          continue;
+          // Fall back to next model on high demand or rate limits
+          if (res.status === 503 || res.status === 429) {
+            continue;
+          }
+
+          if (res.ok) {
+            break;
+          } else {
+            const errJson = await res.json().catch(() => ({}));
+            lastErrorMessage = errJson.error?.message || `API error code: ${res.status}`;
+          }
+        } catch (fetchErr) {
+          lastErrorMessage = fetchErr.message;
         }
-        break;
       }
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error?.message || `API error code: ${res.status}`);
+      if (!res || !res.ok) {
+        throw new Error(lastErrorMessage || 'Service is temporarily busy across model endpoints. Please try again.');
       }
 
       const resData = await res.json();
@@ -322,7 +336,7 @@ export default function App() {
         try {
           fileInputRef.current.value = '';
         } catch {
-          // ignore Safari file reset quirks
+          // ignore Safari file input quirks
         }
       }
     }
