@@ -214,6 +214,15 @@ export default function App() {
     });
   };
 
+  // Helper to compute initials for the header avatar button
+  const getUserInitials = () => {
+    const f = firstName ? firstName.trim().charAt(0).toUpperCase() : '';
+    const l = lastName ? lastName.trim().charAt(0).toUpperCase() : '';
+    if (f || l) return `${f}${l}`;
+    if (session?.user?.email) return session.user.email.charAt(0).toUpperCase();
+    return null;
+  };
+
   // Save "About the User" profile tab
   const handleSaveAboutUser = async (e) => {
     e.preventDefault();
@@ -628,6 +637,8 @@ Return strictly pure JSON with no markdown wrapping:
     return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   };
 
+  const initials = getUserInitials();
+
   if (authLoading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#121212', color: '#fff' }}>
@@ -957,22 +968,28 @@ Return strictly pure JSON with no markdown wrapping:
           <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>Calorie Tracker</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Dynamic Initials Avatar Button */}
           <button
             onClick={() => setShowAccountModal(true)}
             title="My Account"
             style={{
-              background: darkMode ? '#27272a' : '#e2e8f0',
-              border: 'none',
+              width: '36px',
+              height: '36px',
               borderRadius: '50%',
-              padding: '8px',
+              border: initials ? '1.5px solid #f97316' : 'none',
+              background: initials ? 'rgba(249, 115, 22, 0.15)' : (darkMode ? '#27272a' : '#e2e8f0'),
+              color: initials ? '#f97316' : 'inherit',
               cursor: 'pointer',
-              color: 'inherit',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center'
+              justifyContent: 'center',
+              fontWeight: '800',
+              fontSize: '13px',
+              letterSpacing: '0.5px',
+              boxSizing: 'border-box'
             }}
           >
-            <User size={18} />
+            {initials ? initials : <User size={18} />}
           </button>
           <button
             onClick={() => setDarkMode(!darkMode)}
@@ -1547,7 +1564,20 @@ Return strictly pure JSON with no markdown wrapping:
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <User color="#f97316" size={24} />
+                <div style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  background: 'rgba(249, 115, 22, 0.15)',
+                  color: '#f97316',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: '800',
+                  fontSize: '12px'
+                }}>
+                  {initials ? initials : <User size={16} />}
+                </div>
                 <h2 style={{ fontSize: '18px', fontWeight: '700', margin: 0 }}>My Account</h2>
               </div>
               <button
