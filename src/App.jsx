@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Plus, Trash2, ChevronLeft, ChevronRight, Utensils, 
+  Plus, Trash2, Edit2, X, ChevronLeft, ChevronRight, Utensils, 
   Flame, Apple, Coffee, Moon, Sun, AlertCircle, CheckCircle2, 
   Calendar, LogOut, Camera, Loader2, Sparkles, KeyRound
 } from 'lucide-react';
@@ -54,6 +54,10 @@ export default function App() {
   const [carbs, setCarbs] = useState('');
   const [fat, setFat] = useState('');
   const [darkMode, setDarkMode] = useState(false);
+
+  // Edit log state
+  const [editingEntryId, setEditingEntryId] = useState(null);
+  const formRef = useRef(null);
 
   // AI state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -177,34 +181,80 @@ export default function App() {
     });
   };
 
-  const handleAddEntry = async (e) => {
+  const resetForm = () => {
+    setFoodName('');
+    setCalories('');
+    setProtein('');
+    setCarbs('');
+    setFat('');
+    setEditingEntryId(null);
+    setAiSuccessMessage('');
+  };
+
+  const handleStartEdit = (item) => {
+    setEditingEntryId(item.id);
+    setFoodName(item.name || '');
+    setCalories(item.calories !== undefined ? String(item.calories) : '');
+    setProtein(item.protein !== undefined ? String(item.protein) : '');
+    setCarbs(item.carbs !== undefined ? String(item.carbs) : '');
+    setFat(item.fat !== undefined ? String(item.fat) : '');
+    if (item.category && ['breakfast', 'lunch', 'dinner', 'snacks'].includes(item.category.toLowerCase())) {
+      setActiveCategory(item.category.toLowerCase());
+    }
+    if (formRef.current) {
+      formRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
+  const handleAddOrUpdateEntry = async (e) => {
     e.preventDefault();
     if (!foodName || !calories || !session?.user) return;
 
-    const newRecord = {
-      user_id: session.user.id,
-      date: currentDate,
-      name: foodName,
-      calories: Number(calories),
-      protein: Number(protein) || 0,
-      carbs: Number(carbs) || 0,
-      fat: Number(fat) || 0,
-      category: activeCategory
-    };
+    if (editingEntryId) {
+      // Update existing item
+      const updatedFields = {
+        name: foodName,
+        calories: Number(calories),
+        protein: Number(protein) || 0,
+        carbs: Number(carbs) || 0,
+        fat: Number(fat) || 0,
+        category: activeCategory
+      };
 
-    const { data, error } = await supabase
-      .from('meal_entries')
-      .insert([newRecord])
-      .select();
+      const { data, error } = await supabase
+        .from('meal_entries')
+        .update(updatedFields)
+        .eq('id', editingEntryId)
+        .select();
 
-    if (!error && data) {
-      setEntries((prev) => [...prev, data[0]]);
-      setFoodName('');
-      setCalories('');
-      setProtein('');
-      setCarbs('');
-      setFat('');
-      setAiSuccessMessage('');
+      if (!error && data) {
+        setEntries((prev) => prev.map((item) => (item.id === editingEntryId ? data[0] : item)));
+        resetForm();
+      } else if (error) {
+        alert(`Failed to update log: ${error.message}`);
+      }
+    } else {
+      // Create new item
+      const newRecord = {
+        user_id: session.user.id,
+        date: currentDate,
+        name: foodName,
+        calories: Number(calories),
+        protein: Number(protein) || 0,
+        carbs: Number(carbs) || 0,
+        fat: Number(fat) || 0,
+        category: activeCategory
+      };
+
+      const { data, error } = await supabase
+        .from('meal_entries')
+        .insert([newRecord])
+        .select();
+
+      if (!error && data) {
+        setEntries((prev) => [...prev, data[0]]);
+        resetForm();
+      }
     }
   };
 
@@ -233,6 +283,9 @@ export default function App() {
   };
 
   const handleDeleteEntry = async (id) => {
+    if (editingEntryId === id) {
+      resetForm();
+    }
     const { error } = await supabase
       .from('meal_entries')
       .delete()
@@ -303,7 +356,6 @@ export default function App() {
 
       const prompt = `Analyze this food image. Provide a realistic estimate of the meal summary name, calories, protein (g), carbs (g), fat (g), and category ("breakfast", "lunch", "dinner", or "snacks"). Return JSON only: {"name":"Meal Name","calories":500,"protein":30,"carbs":40,"fat":15,"category":"lunch"}`;
 
-      // Updated to current gemini-3.8-flash model endpoint
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
       const res = await fetch(url, {
@@ -348,6 +400,9 @@ export default function App() {
       }
 
       setAiSuccessMessage('Meal analyzed! Verify the numbers and tap "Add Entry".');
+      if (formRef.current) {
+        formRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
     } catch (err) {
       alert(`AI Scan error: ${err.message}`);
     } finally {
@@ -1001,9 +1056,36 @@ export default function App() {
           </div>
         </div>
 
-        {/* Add Food Form */}
-        <form onSubmit={handleAddEntry} style={{ background: darkMode ? '#1e1e24' : '#ffffff', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', boxSizing: 'border-box', width: '100%' }}>
-          <h3 style={{ fontSize: '14px', fontWeight: '700', margin: 0, color: '#888' }}>LOG FOOD</h3>
+        {/* Add / Edit Food Form */}
+        <form 
+          ref={formRef}
+          onSubmit={handleAddOrUpdateEntry} 
+          style={{ 
+            background: darkMode ? '#1e1e24' : '#ffffff', 
+            borderRadius: '16px', 
+            padding: '16px', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '12px', 
+            boxSizing: 'border-box', 
+            width: '100%',
+            border: editingEntryId ? '2px solid #f97316' : 'none'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: '700', margin: 0, color: editingEntryId ? '#f97316' : '#888' }}>
+              {editingEntryId ? 'EDIT FOOD ENTRY' : 'LOG FOOD'}
+            </h3>
+            {editingEntryId && (
+              <button
+                type="button"
+                onClick={resetForm}
+                style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', padding: 0 }}
+              >
+                <X size={14} /> Cancel Edit
+              </button>
+            )}
+          </div>
           
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', width: '100%', boxSizing: 'border-box' }}>
             {MEAL_CATEGORIES.map((cat) => (
@@ -1029,105 +1111,143 @@ export default function App() {
             ))}
           </div>
 
+          {/* Row 1: Food Name & Calories */}
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
-            <input
-              type="text"
-              placeholder="Food name"
-              value={foodName}
-              onChange={(e) => setFoodName(e.target.value)}
-              style={{
-                width: '100%',
-                minWidth: 0,
-                boxSizing: 'border-box',
-                padding: '10px 12px',
-                borderRadius: '8px',
-                border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
-                background: darkMode ? '#27272a' : '#fff',
-                color: 'inherit',
-                fontSize: '14px'
-              }}
-              required
-            />
-            <input
-              type="number"
-              placeholder="Calories"
-              value={calories}
-              onChange={(e) => setCalories(e.target.value)}
-              style={{
-                width: '100%',
-                minWidth: 0,
-                boxSizing: 'border-box',
-                padding: '10px 12px',
-                borderRadius: '8px',
-                border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
-                background: darkMode ? '#27272a' : '#fff',
-                color: 'inherit',
-                fontSize: '14px'
-              }}
-              required
-            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '11px', fontWeight: '600', color: '#888' }}>Food Name</label>
+              <input
+                type="text"
+                placeholder="e.g. Chicken Rice"
+                value={foodName}
+                onChange={(e) => setFoodName(e.target.value)}
+                style={{
+                  width: '100%',
+                  minWidth: 0,
+                  boxSizing: 'border-box',
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                  background: darkMode ? '#27272a' : '#fff',
+                  color: 'inherit',
+                  fontSize: '14px'
+                }}
+                required
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '11px', fontWeight: '600', color: '#f97316' }}>Calories (kcal)</label>
+              <input
+                type="number"
+                placeholder="0"
+                value={calories}
+                onChange={(e) => setCalories(e.target.value)}
+                style={{
+                  width: '100%',
+                  minWidth: 0,
+                  boxSizing: 'border-box',
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                  background: darkMode ? '#27272a' : '#fff',
+                  color: 'inherit',
+                  fontSize: '14px'
+                }}
+                required
+              />
+            </div>
           </div>
 
-          {/* 3-Column Macro Inputs with Guaranteed Container Bounds */}
+          {/* Row 2: Macros */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
-            <input
-              type="number"
-              placeholder="Protein (g)"
-              value={protein}
-              onChange={(e) => setProtein(e.target.value)}
-              style={{
-                width: '100%',
-                minWidth: 0,
-                boxSizing: 'border-box',
-                padding: '8px 10px',
-                borderRadius: '8px',
-                border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
-                background: darkMode ? '#27272a' : '#fff',
-                color: 'inherit',
-                fontSize: '13px'
-              }}
-            />
-            <input
-              type="number"
-              placeholder="Carbs (g)"
-              value={carbs}
-              onChange={(e) => setCarbs(e.target.value)}
-              style={{
-                width: '100%',
-                minWidth: 0,
-                boxSizing: 'border-box',
-                padding: '8px 10px',
-                borderRadius: '8px',
-                border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
-                background: darkMode ? '#27272a' : '#fff',
-                color: 'inherit',
-                fontSize: '13px'
-              }}
-            />
-            <input
-              type="number"
-              placeholder="Fat (g)"
-              value={fat}
-              onChange={(e) => setFat(e.target.value)}
-              style={{
-                width: '100%',
-                minWidth: 0,
-                boxSizing: 'border-box',
-                padding: '8px 10px',
-                borderRadius: '8px',
-                border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
-                background: darkMode ? '#27272a' : '#fff',
-                color: 'inherit',
-                fontSize: '13px'
-              }}
-            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '11px', fontWeight: '700', color: '#38bdf8' }}>Protein (g)</label>
+              <input
+                type="number"
+                placeholder="0"
+                value={protein}
+                onChange={(e) => setProtein(e.target.value)}
+                style={{
+                  width: '100%',
+                  minWidth: 0,
+                  boxSizing: 'border-box',
+                  padding: '8px 10px',
+                  borderRadius: '8px',
+                  border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                  background: darkMode ? '#27272a' : '#fff',
+                  color: 'inherit',
+                  fontSize: '13px'
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '11px', fontWeight: '700', color: '#f59e0b' }}>Carbs (g)</label>
+              <input
+                type="number"
+                placeholder="0"
+                value={carbs}
+                onChange={(e) => setCarbs(e.target.value)}
+                style={{
+                  width: '100%',
+                  minWidth: 0,
+                  boxSizing: 'border-box',
+                  padding: '8px 10px',
+                  borderRadius: '8px',
+                  border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                  background: darkMode ? '#27272a' : '#fff',
+                  color: 'inherit',
+                  fontSize: '13px'
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '11px', fontWeight: '700', color: '#ec4899' }}>Fat (g)</label>
+              <input
+                type="number"
+                placeholder="0"
+                value={fat}
+                onChange={(e) => setFat(e.target.value)}
+                style={{
+                  width: '100%',
+                  minWidth: 0,
+                  boxSizing: 'border-box',
+                  padding: '8px 10px',
+                  borderRadius: '8px',
+                  border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                  background: darkMode ? '#27272a' : '#fff',
+                  color: 'inherit',
+                  fontSize: '13px'
+                }}
+              />
+            </div>
           </div>
 
           <button
             type="submit"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', borderRadius: '10px', background: '#f97316', color: '#fff', border: 'none', fontWeight: '700', cursor: 'pointer', width: '100%', boxSizing: 'border-box' }}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              gap: '6px', 
+              padding: '12px', 
+              borderRadius: '10px', 
+              background: '#f97316', 
+              color: '#fff', 
+              border: 'none', 
+              fontWeight: '700', 
+              cursor: 'pointer', 
+              width: '100%', 
+              boxSizing: 'border-box' 
+            }}
           >
-            <Plus size={18} /> Add Entry
+            {editingEntryId ? (
+              <>
+                <Edit2 size={16} /> Update Entry
+              </>
+            ) : (
+              <>
+                <Plus size={18} /> Add Entry
+              </>
+            )}
           </button>
         </form>
 
@@ -1154,7 +1274,8 @@ export default function App() {
                   background: darkMode ? '#1e1e24' : '#ffffff',
                   boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
                   boxSizing: 'border-box',
-                  width: '100%'
+                  width: '100%',
+                  border: editingEntryId === item.id ? '1.5px solid #f97316' : 'none'
                 }}
               >
                 <div>
@@ -1167,10 +1288,18 @@ export default function App() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span style={{ fontWeight: '700', fontSize: '15px' }}>{item.calories} kcal</span>
                   <button
+                    onClick={() => handleStartEdit(item)}
+                    title="Edit entry"
+                    style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: '4px' }}
+                  >
+                    <Edit2 size={16} />
+                  </button>
+                  <button
                     onClick={() => handleDeleteEntry(item.id)}
+                    title="Delete entry"
                     style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
                   >
                     <Trash2 size={16} />
