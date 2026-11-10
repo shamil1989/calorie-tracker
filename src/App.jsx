@@ -298,62 +298,38 @@ export default function App() {
 
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) {
-        throw new Error('VITE_GEMINI_API_KEY is not configured in your environment variables.');
+        throw new Error('VITE_GEMINI_API_KEY is missing in environment variables.');
       }
 
       const prompt = `Analyze this food image. Provide a realistic estimate of the meal summary name, calories, protein (g), carbs (g), fat (g), and category ("breakfast", "lunch", "dinner", or "snacks"). Return JSON only: {"name":"Meal Name","calories":500,"protein":30,"carbs":40,"fat":15,"category":"lunch"}`;
 
-      // Canonical production model endpoints:
-      const modelsToTry = [
-        'gemini-2.5-flash',
-        'gemini-1.5-flash'
-      ];
+      // Direct call to Gemini 2.5 Flash on v1beta
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
-      let res;
-      let lastErrorMessage = '';
-
-      for (const model of modelsToTry) {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-        try {
-          res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{
-                parts: [
-                  { text: prompt },
-                  {
-                    inlineData: {
-                      mimeType: 'image/jpeg',
-                      data: base64Data
-                    }
-                  }
-                ]
-              }],
-              generationConfig: {
-                responseMimeType: 'application/json'
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: 'image/jpeg',
+                  data: base64Data
+                }
               }
-            })
-          });
-
-          if (res.status === 503 || res.status === 429) {
-            continue;
+            ]
+          }],
+          generationConfig: {
+            responseMimeType: 'application/json'
           }
+        })
+      });
 
-          if (res.ok) {
-            break;
-          } else {
-            const errJson = await res.json().catch(() => ({}));
-            lastErrorMessage = errJson.error?.message || `API error code: ${res.status}`;
-          }
-        } catch (fetchErr) {
-          lastErrorMessage = fetchErr.message;
-        }
-      }
-
-      if (!res || !res.ok) {
-        throw new Error(lastErrorMessage || 'Service is temporarily busy across model endpoints. Please try again.');
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error?.message || `API error code: ${res.status}`);
       }
 
       const resData = await res.json();
