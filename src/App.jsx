@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Trash2, Edit2, X, ChevronLeft, ChevronRight, Utensils, 
   Flame, Apple, Coffee, Moon, Sun, AlertCircle, CheckCircle2, 
-  Calendar, LogOut, Camera, Loader2, Sparkles, KeyRound
+  Calendar, LogOut, Camera, Loader2, Sparkles, KeyRound, User, Save
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -59,10 +59,21 @@ export default function App() {
   const [editingEntryId, setEditingEntryId] = useState(null);
   const formRef = useRef(null);
 
-  // AI state
+  // AI Meal Scanner state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiSuccessMessage, setAiSuccessMessage] = useState('');
   const fileInputRef = useRef(null);
+
+  // My Account / Profile State
+  const [showAccountModal, setShowAccountModal] = useState(false);
+  const [heightFeet, setHeightFeet] = useState('5');
+  const [heightInches, setHeightInches] = useState('10');
+  const [weightLbs, setWeightLbs] = useState('');
+  const [age, setAge] = useState('');
+  const [gender, setGender] = useState('male');
+  const [activityLevel, setActivityLevel] = useState('moderate');
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [aiAssessment, setAiAssessment] = useState(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -87,12 +98,19 @@ export default function App() {
       try {
         const { data: goalData } = await supabase
           .from('user_settings')
-          .select('daily_goal')
+          .select('*')
           .eq('user_id', session.user.id)
           .maybeSingle();
 
-        if (goalData?.daily_goal) {
-          setDailyGoal(goalData.daily_goal);
+        if (goalData) {
+          if (goalData.daily_goal) setDailyGoal(goalData.daily_goal);
+          if (goalData.height_feet) setHeightFeet(String(goalData.height_feet));
+          if (goalData.height_inches) setHeightInches(String(goalData.height_inches));
+          if (goalData.weight_lbs) setWeightLbs(String(goalData.weight_lbs));
+          if (goalData.age) setAge(String(goalData.age));
+          if (goalData.gender) setGender(goalData.gender);
+          if (goalData.activity_level) setActivityLevel(goalData.activity_level);
+          if (goalData.ai_profile_analysis) setAiAssessment(goalData.ai_profile_analysis);
         }
 
         const { data: mealData, error } = await supabase
@@ -185,6 +203,99 @@ export default function App() {
     });
   };
 
+  // Profile Assessment & AI Goal Recommendation
+  const handleCalculateAiGoal = async (e) => {
+    e.preventDefault();
+    if (!weightLbs || !heightFeet) {
+      alert('Please enter your height and weight.');
+      return;
+    }
+
+    setProfileLoading(true);
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error('VITE_GEMINI_API_KEY is not configured in your environment variables.');
+      }
+
+      const prompt = `You are an expert sports nutritionist and dietitian.
+Analyze this user profile:
+- Height: ${heightFeet} feet ${heightInches || 0} inches
+- Weight: ${weightLbs} lbs
+- Age: ${age || 30} years old
+- Gender: ${gender}
+- Activity Level: ${activityLevel}
+
+Task:
+1. Determine their Body Mass Index (BMI) and categorization (Underweight, Normal, Overweight, Obese).
+2. If their weight is too high for their height, recommend a safe caloric deficit goal for sustainable fat loss (-1 to -1.5 lbs/week).
+3. If they are in a normal range, recommend a maintenance calorie goal.
+4. If underweight, recommend a healthy surplus.
+5. Provide a supportive, concise 2-sentence rationale.
+
+Return strictly pure JSON with no markdown wrapping:
+{
+  "bmi": 26.4,
+  "status": "Overweight",
+  "weightProportionEvaluation": "Your weight is currently above the optimal range for your height.",
+  "recommendedDailyCalories": 1950,
+  "recommendedMacros": {
+    "proteinGrams": 160,
+    "carbsGrams": 180,
+    "fatGrams": 65
+  },
+  "rationale": "We targeted a gentle 450 kcal deficit below your estimated maintenance of 2400 kcal to promote steady fat loss while preserving lean muscle mass."
+}`;
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: 'application/json' }
+        })
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error?.message || `API error code: ${res.status}`);
+      }
+
+      const resData = await res.json();
+      const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      const cleanJson = rawText.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(cleanJson);
+
+      setAiAssessment(parsed);
+
+      // Save to Supabase user_settings
+      await supabase.from('user_settings').upsert({
+        user_id: session.user.id,
+        height_feet: Number(heightFeet),
+        height_inches: Number(heightInches) || 0,
+        weight_lbs: Number(weightLbs),
+        age: Number(age) || null,
+        gender,
+        activity_level: activityLevel,
+        ai_profile_analysis: parsed,
+        updated_at: new Date().toISOString()
+      });
+    } catch (err) {
+      alert(`AI Goal Calculation Error: ${err.message}`);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const applyRecommendedGoal = async () => {
+    if (!aiAssessment?.recommendedDailyCalories) return;
+    await handleUpdateGoal(aiAssessment.recommendedDailyCalories);
+    alert(`Daily goal updated to ${aiAssessment.recommendedDailyCalories} kcal!`);
+    setShowAccountModal(false);
+  };
+
   const resetForm = () => {
     setFoodName('');
     setCalories('');
@@ -243,7 +354,6 @@ export default function App() {
           return;
         }
 
-        // Safe fallback: use returned row if available, otherwise update in-memory object safely
         const updatedRow = (data && data.length > 0) 
           ? data[0] 
           : { id: editingEntryId, date: currentDate, user_id: session.user.id, ...updatedFields };
@@ -814,6 +924,23 @@ export default function App() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
+            onClick={() => setShowAccountModal(true)}
+            title="My Account"
+            style={{
+              background: darkMode ? '#27272a' : '#e2e8f0',
+              border: 'none',
+              borderRadius: '50%',
+              padding: '8px',
+              cursor: 'pointer',
+              color: 'inherit',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <User size={18} />
+          </button>
+          <button
             onClick={() => setDarkMode(!darkMode)}
             style={{
               background: darkMode ? '#27272a' : '#e2e8f0',
@@ -821,7 +948,10 @@ export default function App() {
               borderRadius: '50%',
               padding: '8px',
               cursor: 'pointer',
-              color: 'inherit'
+              color: 'inherit',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}
           >
             {darkMode ? <Sun size={18} /> : <Moon size={18} />}
@@ -835,7 +965,10 @@ export default function App() {
               borderRadius: '50%',
               padding: '8px',
               cursor: 'pointer',
-              color: 'inherit'
+              color: 'inherit',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}
           >
             <LogOut size={18} />
@@ -843,6 +976,7 @@ export default function App() {
         </div>
       </header>
 
+      {/* Main Tracker Container */}
       <main style={{ maxWidth: '560px', margin: '0 auto', padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '16px', boxSizing: 'border-box', width: '100%' }}>
         
         {/* Date Selector */}
@@ -1348,6 +1482,296 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {/* MY ACCOUNT / PROFILE MODAL */}
+      {showAccountModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.65)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '16px',
+          boxSizing: 'border-box'
+        }}>
+          <div style={{
+            background: darkMode ? '#1e1e24' : '#ffffff',
+            borderRadius: '20px',
+            width: '100%',
+            maxWidth: '480px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            padding: '24px',
+            boxSizing: 'border-box',
+            boxShadow: '0 10px 40px rgba(0,0,0,0.2)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <User color="#f97316" size={24} />
+                <h2 style={{ fontSize: '18px', fontWeight: '700', margin: 0 }}>My Account & Body Profile</h2>
+              </div>
+              <button
+                onClick={() => setShowAccountModal(false)}
+                style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '13px', color: '#888', marginTop: 0, marginBottom: '16px' }}>
+              Enter your height and weight. Gemini will analyze your proportions, determine whether a deficit or surplus is ideal, and set your optimal calorie target.
+            </p>
+
+            <form onSubmit={handleCalculateAiGoal} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* Height Inputs */}
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Height</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <input
+                      type="number"
+                      placeholder="5"
+                      value={heightFeet}
+                      onChange={(e) => setHeightFeet(e.target.value)}
+                      required
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        borderRadius: '8px',
+                        border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                        background: darkMode ? '#27272a' : '#fff',
+                        color: 'inherit',
+                        fontSize: '14px',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                    <span style={{ fontSize: '13px', color: '#888' }}>ft</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <input
+                      type="number"
+                      placeholder="10"
+                      value={heightInches}
+                      onChange={(e) => setHeightInches(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        borderRadius: '8px',
+                        border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                        background: darkMode ? '#27272a' : '#fff',
+                        color: 'inherit',
+                        fontSize: '14px',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                    <span style={{ fontSize: '13px', color: '#888' }}>in</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Weight & Age */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Weight (lbs)</label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 185"
+                    value={weightLbs}
+                    onChange={(e) => setWeightLbs(e.target.value)}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      borderRadius: '8px',
+                      border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                      background: darkMode ? '#27272a' : '#fff',
+                      color: 'inherit',
+                      fontSize: '14px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Age (years)</label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 30"
+                    value={age}
+                    onChange={(e) => setAge(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      borderRadius: '8px',
+                      border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                      background: darkMode ? '#27272a' : '#fff',
+                      color: 'inherit',
+                      fontSize: '14px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Gender & Activity Level */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Gender</label>
+                  <select
+                    value={gender}
+                    onChange={(e) => setGender(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      borderRadius: '8px',
+                      border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                      background: darkMode ? '#27272a' : '#fff',
+                      color: 'inherit',
+                      fontSize: '13px',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Activity Level</label>
+                  <select
+                    value={activityLevel}
+                    onChange={(e) => setActivityLevel(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      borderRadius: '8px',
+                      border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                      background: darkMode ? '#27272a' : '#fff',
+                      color: 'inherit',
+                      fontSize: '13px',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    <option value="sedentary">Sedentary (desk job)</option>
+                    <option value="light">Lightly Active (1-2 days/wk)</option>
+                    <option value="moderate">Moderately Active (3-5 days/wk)</option>
+                    <option value="heavy">Very Active (6-7 days/wk)</option>
+                  </select>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={profileLoading}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  padding: '12px',
+                  borderRadius: '10px',
+                  background: '#f97316',
+                  color: '#fff',
+                  border: 'none',
+                  fontWeight: '700',
+                  cursor: profileLoading ? 'wait' : 'pointer',
+                  marginTop: '8px'
+                }}
+              >
+                {profileLoading ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" /> Analyzing Proportions with Gemini...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={16} /> Evaluate Body Proportions & Set Goal
+                  </>
+                )}
+              </button>
+            </form>
+
+            {/* AI Assessment Result Card */}
+            {aiAssessment && (
+              <div style={{
+                marginTop: '20px',
+                padding: '16px',
+                borderRadius: '12px',
+                background: darkMode ? '#27272a' : '#f8fafc',
+                border: '1.5px solid #f97316',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                boxSizing: 'border-box'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '13px', fontWeight: '700', color: '#f97316' }}>Gemini Body Assessment</span>
+                  <span style={{ fontSize: '12px', padding: '3px 8px', borderRadius: '12px', background: 'rgba(249, 115, 22, 0.15)', color: '#f97316', fontWeight: '600' }}>
+                    BMI: {aiAssessment.bmi || 'N/A'} ({aiAssessment.status || 'Calculated'})
+                  </span>
+                </div>
+
+                <p style={{ fontSize: '13px', margin: 0, lineHeight: 1.4 }}>
+                  {aiAssessment.weightProportionEvaluation}
+                </p>
+
+                <div style={{ background: darkMode ? '#1e1e24' : '#fff', padding: '12px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#888' }}>Recommended Daily Goal</div>
+                    <div style={{ fontSize: '22px', fontWeight: '800', color: '#f97316' }}>
+                      {aiAssessment.recommendedDailyCalories} kcal
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={applyRecommendedGoal}
+                    style={{
+                      background: '#10b981',
+                      color: '#fff',
+                      border: 'none',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <CheckCircle2 size={14} /> Apply This Goal
+                  </button>
+                </div>
+
+                {aiAssessment.recommendedMacros && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', textAlign: 'center' }}>
+                    <div style={{ padding: '6px', background: darkMode ? '#1e1e24' : '#fff', borderRadius: '6px' }}>
+                      <span style={{ fontSize: '11px', color: '#38bdf8', fontWeight: '600' }}>Protein</span>
+                      <div style={{ fontSize: '14px', fontWeight: '700' }}>{aiAssessment.recommendedMacros.proteinGrams}g</div>
+                    </div>
+                    <div style={{ padding: '6px', background: darkMode ? '#1e1e24' : '#fff', borderRadius: '6px' }}>
+                      <span style={{ fontSize: '11px', color: '#f59e0b', fontWeight: '600' }}>Carbs</span>
+                      <div style={{ fontSize: '14px', fontWeight: '700' }}>{aiAssessment.recommendedMacros.carbsGrams}g</div>
+                    </div>
+                    <div style={{ padding: '6px', background: darkMode ? '#1e1e24' : '#fff', borderRadius: '6px' }}>
+                      <span style={{ fontSize: '11px', color: '#ec4899', fontWeight: '600' }}>Fat</span>
+                      <div style={{ fontSize: '14px', fontWeight: '700' }}>{aiAssessment.recommendedMacros.fatGrams}g</div>
+                    </div>
+                  </div>
+                )}
+
+                {aiAssessment.rationale && (
+                  <p style={{ fontSize: '12px', color: '#888', margin: 0, fontStyle: 'italic', lineHeight: 1.4 }}>
+                    "{aiAssessment.rationale}"
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
