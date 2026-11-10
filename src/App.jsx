@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Edit2, X, ChevronLeft, ChevronRight, Utensils, 
   Flame, Apple, Coffee, Moon, Sun, AlertCircle, CheckCircle2, 
   Calendar, LogOut, Camera, Loader2, Sparkles, KeyRound, User, 
-  Activity, MapPin, Save, Mail, Lock
+  Activity, MapPin, Save, Mail, Lock, UserCheck, ShieldAlert
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -37,6 +37,7 @@ export default function App() {
 
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [isGuestLoading, setIsGuestLoading] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -72,6 +73,12 @@ export default function App() {
   const [lastName, setLastName] = useState('');
   const [location, setLocation] = useState('');
   const [aboutSavedMessage, setAboutSavedMessage] = useState('');
+
+  // Guest-to-Permanent Account upgrade state
+  const [upgradeEmail, setUpgradeEmail] = useState('');
+  const [upgradePassword, setUpgradePassword] = useState('');
+  const [upgradeError, setUpgradeError] = useState('');
+  const [upgradeSuccess, setUpgradeSuccess] = useState('');
 
   // Body Profile State
   const [heightFeet, setHeightFeet] = useState('5');
@@ -161,6 +168,45 @@ export default function App() {
     }
   };
 
+  const handleGuestSignIn = async () => {
+    setAuthError('');
+    setIsGuestLoading(true);
+    try {
+      const { error } = await supabase.auth.signInAnonymously();
+      if (error) throw error;
+    } catch (err) {
+      setAuthError(err.message || 'Failed to initialize guest session. Please verify Anonymous Auth is enabled in Supabase.');
+    } finally {
+      setIsGuestLoading(false);
+    }
+  };
+
+  const handleUpgradeAccount = async (e) => {
+    e.preventDefault();
+    setUpgradeError('');
+    setUpgradeSuccess('');
+
+    if (!upgradeEmail || !upgradePassword || upgradePassword.length < 6) {
+      setUpgradeError('Please provide a valid email and a password of at least 6 characters.');
+      return;
+    }
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        email: upgradeEmail,
+        password: upgradePassword
+      });
+
+      if (error) throw error;
+      setUpgradeSuccess('Account linked successfully! Please check your email inbox to confirm your address.');
+      setTimeout(() => {
+        setUpgradeSuccess('');
+      }, 4000);
+    } catch (err) {
+      setUpgradeError(err.message);
+    }
+  };
+
   const handleResetRequest = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -214,7 +260,10 @@ export default function App() {
     });
   };
 
+  const isAnonymousUser = Boolean(session?.user?.is_anonymous || !session?.user?.email);
+
   const getUserInitials = () => {
+    if (isAnonymousUser) return 'G';
     const f = firstName ? firstName.trim().charAt(0).toUpperCase() : '';
     const l = lastName ? lastName.trim().charAt(0).toUpperCase() : '';
     if (f || l) return `${f}${l}`;
@@ -726,7 +775,7 @@ Return strictly pure JSON with no markdown wrapping:
     );
   }
 
-  // REDESIGNED LOGIN & SIGNUP CARD (BiteTracks)
+  // REDESIGNED LOGIN CARD WITH "CONTINUE AS GUEST"
   if (!session) {
     return (
       <div style={{
@@ -870,90 +919,133 @@ Return strictly pure JSON with no markdown wrapping:
               </button>
             </form>
           ) : (
-            <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <Mail size={18} color="#94a3b8" style={{ position: 'absolute', left: '14px', pointerEvents: 'none' }} />
-                <input
-                  type="email"
-                  placeholder="Enter your email"
-                  value={authEmail}
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  required
-                  style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '12px 14px 12px 42px',
-                    borderRadius: '12px',
-                    border: '1px solid rgba(255, 255, 255, 0.12)',
-                    background: '#1b2234',
-                    color: '#fff',
-                    fontSize: '14px',
-                    outline: 'none'
-                  }}
-                />
-              </div>
-
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <Lock size={18} color="#94a3b8" style={{ position: 'absolute', left: '14px', pointerEvents: 'none' }} />
-                <input
-                  type="password"
-                  placeholder="Password"
-                  value={authPassword}
-                  onChange={(e) => setAuthPassword(e.target.value)}
-                  required
-                  style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '12px 14px 12px 42px',
-                    borderRadius: '12px',
-                    border: '1px solid rgba(255, 255, 255, 0.12)',
-                    background: '#1b2234',
-                    color: '#fff',
-                    fontSize: '14px',
-                    outline: 'none'
-                  }}
-                />
-              </div>
-
-              {!isSignUp && (
-                <div style={{ textAlign: 'right' }}>
-                  <button
-                    type="button"
-                    onClick={() => { setIsResetMode(true); setAuthError(''); }}
+            <>
+              <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <Mail size={18} color="#94a3b8" style={{ position: 'absolute', left: '14px', pointerEvents: 'none' }} />
+                  <input
+                    type="email"
+                    placeholder="Enter your email"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    required
                     style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#94a3b8',
-                      fontSize: '12px',
-                      cursor: 'pointer',
-                      padding: 0
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      padding: '12px 14px 12px 42px',
+                      borderRadius: '12px',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      background: '#1b2234',
+                      color: '#fff',
+                      fontSize: '14px',
+                      outline: 'none'
                     }}
-                  >
-                    Forgot password?
-                  </button>
+                  />
                 </div>
-              )}
 
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <Lock size={18} color="#94a3b8" style={{ position: 'absolute', left: '14px', pointerEvents: 'none' }} />
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    required
+                    style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      padding: '12px 14px 12px 42px',
+                      borderRadius: '12px',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      background: '#1b2234',
+                      color: '#fff',
+                      fontSize: '14px',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+
+                {!isSignUp && (
+                  <div style={{ textAlign: 'right' }}>
+                    <button
+                      type="button"
+                      onClick={() => { setIsResetMode(true); setAuthError(''); }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#94a3b8',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        padding: 0
+                      }}
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px',
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                    color: '#fff',
+                    border: 'none',
+                    fontWeight: '700',
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                    marginTop: '4px',
+                    boxShadow: '0 6px 18px rgba(249, 115, 22, 0.35)'
+                  }}
+                >
+                  {isSignUp ? 'Sign Up' : 'Log In'}
+                </button>
+              </form>
+
+              {/* OR DIVIDER */}
+              <div style={{ display: 'flex', alignItems: 'center', margin: '18px 0', gap: '10px' }}>
+                <div style={{ flex: 1, height: '1px', background: 'rgba(255, 255, 255, 0.1)' }} />
+                <span style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>or</span>
+                <div style={{ flex: 1, height: '1px', background: 'rgba(255, 255, 255, 0.1)' }} />
+              </div>
+
+              {/* CONTINUE AS GUEST BUTTON */}
               <button
-                type="submit"
+                type="button"
+                onClick={handleGuestSignIn}
+                disabled={isGuestLoading}
                 style={{
                   width: '100%',
                   boxSizing: 'border-box',
                   padding: '12px',
                   borderRadius: '12px',
-                  background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                  color: '#fff',
-                  border: 'none',
-                  fontWeight: '700',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  color: '#e2e8f0',
+                  fontWeight: '600',
                   fontSize: '14px',
-                  cursor: 'pointer',
-                  marginTop: '4px',
-                  boxShadow: '0 6px 18px rgba(249, 115, 22, 0.35)'
+                  cursor: isGuestLoading ? 'wait' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  transition: 'background 0.2s'
                 }}
               >
-                {isSignUp ? 'Sign Up' : 'Log In'}
+                {isGuestLoading ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" /> Starting guest mode...
+                  </>
+                ) : (
+                  <>
+                    <User size={16} color="#f97316" /> Continue as Guest
+                  </>
+                )}
               </button>
-            </form>
+            </>
           )}
 
           {!isResetMode && (
@@ -1007,11 +1099,48 @@ Return strictly pure JSON with no markdown wrapping:
       boxSizing: 'border-box',
       transition: 'background-color 0.2s, color 0.2s'
     }}>
+      {/* GUEST BANNER */}
+      {isAnonymousUser && (
+        <div style={{
+          background: 'linear-gradient(90deg, #b45309 0%, #d97706 100%)',
+          color: '#fff',
+          padding: '8px 16px',
+          fontSize: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          textAlign: 'center',
+          boxSizing: 'border-box'
+        }}>
+          <ShieldAlert size={15} />
+          <span>You are browsing as a guest.</span>
+          <button
+            onClick={() => {
+              setActiveAccountTab('about');
+              setShowAccountModal(true);
+            }}
+            style={{
+              background: '#fff',
+              color: '#78350f',
+              border: 'none',
+              borderRadius: '6px',
+              padding: '2px 8px',
+              fontWeight: '700',
+              fontSize: '11px',
+              cursor: 'pointer'
+            }}
+          >
+            Create Permanent Account
+          </button>
+        </div>
+      )}
+
       {/* Top Header */}
       <header style={{
         maxWidth: '560px',
         margin: '0 auto',
-        paddingTop: 'calc(env(safe-area-inset-top, 20px) + 14px)',
+        paddingTop: isAnonymousUser ? '10px' : 'calc(env(safe-area-inset-top, 20px) + 14px)',
         paddingBottom: '14px',
         paddingLeft: '20px',
         paddingRight: '20px',
@@ -1065,7 +1194,7 @@ Return strictly pure JSON with no markdown wrapping:
           </button>
           <button
             onClick={() => supabase.auth.signOut()}
-            title="Log out"
+            title={isAnonymousUser ? "Exit Guest Mode" : "Log out"}
             style={{
               background: darkMode ? '#27272a' : '#e2e8f0',
               border: 'none',
@@ -1634,7 +1763,9 @@ Return strictly pure JSON with no markdown wrapping:
                 }}>
                   {initials ? initials : <User size={16} />}
                 </div>
-                <h2 style={{ fontSize: '18px', fontWeight: '700', margin: 0 }}>My Account</h2>
+                <h2 style={{ fontSize: '18px', fontWeight: '700', margin: 0 }}>
+                  {isAnonymousUser ? 'Guest Profile' : 'My Account'}
+                </h2>
               </div>
               <button
                 onClick={() => setShowAccountModal(false)}
@@ -1698,131 +1829,218 @@ Return strictly pure JSON with no markdown wrapping:
               </button>
             </div>
 
-            {/* TAB 1: ABOUT USER */}
+            {/* TAB 1: ABOUT USER & UPGRADE ACCOUNT */}
             {activeAccountTab === 'about' && (
-              <form onSubmit={handleSaveAboutUser} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <p style={{ fontSize: '13px', color: '#888', marginTop: 0, marginBottom: '6px' }}>
-                  Manage your personal profile details.
-                </p>
-
-                {aboutSavedMessage && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Guest Upgrade Card */}
+                {isAnonymousUser && (
                   <div style={{
-                    background: darkMode ? '#143823' : '#dcfce7',
-                    border: '1px solid #10b981',
-                    color: darkMode ? '#34d399' : '#15803d',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    fontSize: '12px',
-                    fontWeight: '600'
+                    background: darkMode ? '#261b12' : '#fffbeb',
+                    border: '1.5px solid #f59e0b',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    boxSizing: 'border-box'
                   }}>
-                    {aboutSavedMessage}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <UserCheck size={18} color="#d97706" />
+                      <span style={{ fontSize: '14px', fontWeight: '700', color: darkMode ? '#fbbf24' : '#b45309' }}>
+                        Upgrade to Permanent Account
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '12px', color: '#888', margin: '0 0 12px 0', lineHeight: 1.4 }}>
+                      Attach an email and password to sync your logs across all devices without losing any meals you logged as a guest.
+                    </p>
+
+                    {upgradeError && (
+                      <div style={{ background: '#ef444420', border: '1px solid #ef4444', color: '#ef4444', padding: '8px 10px', borderRadius: '8px', fontSize: '12px', marginBottom: '10px' }}>
+                        {upgradeError}
+                      </div>
+                    )}
+                    {upgradeSuccess && (
+                      <div style={{ background: '#10b98120', border: '1px solid #10b981', color: '#10b981', padding: '8px 10px', borderRadius: '8px', fontSize: '12px', marginBottom: '10px' }}>
+                        {upgradeSuccess}
+                      </div>
+                    )}
+
+                    <form onSubmit={handleUpgradeAccount} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <input
+                        type="email"
+                        placeholder="Your email"
+                        value={upgradeEmail}
+                        onChange={(e) => setUpgradeEmail(e.target.value)}
+                        required
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                          background: darkMode ? '#1e1e24' : '#fff',
+                          color: 'inherit',
+                          fontSize: '13px',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                      <input
+                        type="password"
+                        placeholder="Create password (min 6 chars)"
+                        value={upgradePassword}
+                        onChange={(e) => setUpgradePassword(e.target.value)}
+                        required
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                          background: darkMode ? '#1e1e24' : '#fff',
+                          color: 'inherit',
+                          fontSize: '13px',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                      <button
+                        type="submit"
+                        style={{
+                          background: '#f97316',
+                          color: '#fff',
+                          border: 'none',
+                          padding: '10px',
+                          borderRadius: '8px',
+                          fontWeight: '700',
+                          fontSize: '13px',
+                          cursor: 'pointer',
+                          marginTop: '4px'
+                        }}
+                      >
+                        Save Account & Sync Logs
+                      </button>
+                    </form>
                   </div>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <div>
-                    <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>First Name</label>
-                    <input
-                      type="text"
-                      placeholder="John"
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: '8px',
-                        border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
-                        background: darkMode ? '#27272a' : '#fff',
-                        color: 'inherit',
-                        fontSize: '14px',
-                        boxSizing: 'border-box'
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Last Name</label>
-                    <input
-                      type="text"
-                      placeholder="Doe"
-                      value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: '8px',
-                        border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
-                        background: darkMode ? '#27272a' : '#fff',
-                        color: 'inherit',
-                        fontSize: '14px',
-                        boxSizing: 'border-box'
-                      }}
-                    />
-                  </div>
-                </div>
+                <form onSubmit={handleSaveAboutUser} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <p style={{ fontSize: '13px', color: '#888', margin: 0 }}>
+                    Manage your personal profile details.
+                  </p>
 
-                <div>
-                  <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Location</label>
-                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                    <MapPin size={16} color="#888" style={{ position: 'absolute', left: '12px' }} />
-                    <input
-                      type="text"
-                      placeholder="City, State"
-                      value={location}
-                      onChange={(e) => setLocation(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px 10px 36px',
-                        borderRadius: '8px',
-                        border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
-                        background: darkMode ? '#27272a' : '#fff',
-                        color: 'inherit',
-                        fontSize: '14px',
-                        boxSizing: 'border-box'
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Account Email</label>
-                  <input
-                    type="email"
-                    value={session?.user?.email || ''}
-                    disabled
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
+                  {aboutSavedMessage && (
+                    <div style={{
+                      background: darkMode ? '#143823' : '#dcfce7',
+                      border: '1px solid #10b981',
+                      color: darkMode ? '#34d399' : '#15803d',
+                      padding: '8px 12px',
                       borderRadius: '8px',
-                      border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
-                      background: darkMode ? '#18181b' : '#f1f5f9',
-                      color: '#888',
-                      fontSize: '14px',
-                      boxSizing: 'border-box',
-                      cursor: 'not-allowed'
-                    }}
-                  />
-                </div>
+                      fontSize: '12px',
+                      fontWeight: '600'
+                    }}>
+                      {aboutSavedMessage}
+                    </div>
+                  )}
 
-                <button
-                  type="submit"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    padding: '12px',
-                    borderRadius: '10px',
-                    background: '#f97316',
-                    color: '#fff',
-                    border: 'none',
-                    fontWeight: '700',
-                    cursor: 'pointer',
-                    marginTop: '8px'
-                  }}
-                >
-                  <Save size={16} /> Save Profile
-                </button>
-              </form>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <div>
+                      <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>First Name</label>
+                      <input
+                        type="text"
+                        placeholder="John"
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                          background: darkMode ? '#27272a' : '#fff',
+                          color: 'inherit',
+                          fontSize: '14px',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Last Name</label>
+                      <input
+                        type="text"
+                        placeholder="Doe"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                          background: darkMode ? '#27272a' : '#fff',
+                          color: 'inherit',
+                          fontSize: '14px',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Location</label>
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                      <MapPin size={16} color="#888" style={{ position: 'absolute', left: '12px' }} />
+                      <input
+                        type="text"
+                        placeholder="City, State"
+                        value={location}
+                        onChange={(e) => setLocation(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px 10px 36px',
+                          borderRadius: '8px',
+                          border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                          background: darkMode ? '#27272a' : '#fff',
+                          color: 'inherit',
+                          fontSize: '14px',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Account Email</label>
+                    <input
+                      type="email"
+                      value={session?.user?.email || (isAnonymousUser ? 'Guest Mode (No email linked)' : '')}
+                      disabled
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+                        background: darkMode ? '#18181b' : '#f1f5f9',
+                        color: '#888',
+                        fontSize: '14px',
+                        boxSizing: 'border-box',
+                        cursor: 'not-allowed'
+                      }}
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      padding: '12px',
+                      borderRadius: '10px',
+                      background: '#f97316',
+                      color: '#fff',
+                      border: 'none',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      marginTop: '4px'
+                    }}
+                  >
+                    <Save size={16} /> Save Profile
+                  </button>
+                </form>
+              </div>
             )}
 
             {/* TAB 2: BODY PROFILE */}
