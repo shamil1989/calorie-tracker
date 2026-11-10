@@ -61,7 +61,14 @@ export default function App() {
   const [editingEntryId, setEditingEntryId] = useState(null);
   const formRef = useRef(null);
 
-  // AI Meal Scanner state
+  // Live Gemini Autocomplete & AI Nutrient Estimator State
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [isSearchingSuggestions, setIsSearchingSuggestions] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isEstimatingText, setIsEstimatingText] = useState(false);
+  const debounceTimerRef = useRef(null);
+
+  // AI Meal Scanner State
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiSuccessMessage, setAiSuccessMessage] = useState('');
   const fileInputRef = useRef(null);
@@ -74,7 +81,7 @@ export default function App() {
   const [location, setLocation] = useState('');
   const [aboutSavedMessage, setAboutSavedMessage] = useState('');
 
-  // Guest-to-Permanent Account upgrade state
+  // Guest Account Upgrade State
   const [upgradeEmail, setUpgradeEmail] = useState('');
   const [upgradePassword, setUpgradePassword] = useState('');
   const [upgradeError, setUpgradeError] = useState('');
@@ -199,9 +206,7 @@ export default function App() {
 
       if (error) throw error;
       setUpgradeSuccess('Account linked successfully! Please check your email inbox to confirm your address.');
-      setTimeout(() => {
-        setUpgradeSuccess('');
-      }, 4000);
+      setTimeout(() => setUpgradeSuccess(''), 4000);
     } catch (err) {
       setUpgradeError(err.message);
     }
@@ -293,6 +298,147 @@ export default function App() {
     }
   };
 
+  // AI LIVE AUTOCOMPLETE SUGGESTIONS (gemini-3.8-flash)
+  const fetchAiSuggestions = async (searchTerm) => {
+    const query = searchTerm.trim();
+    if (query.length < 2) {
+      setAiSuggestions([]);
+      setIsSearchingSuggestions(false);
+      return;
+    }
+
+    setIsSearchingSuggestions(true);
+
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) return;
+
+      const prompt = `The user is logging food into a calorie tracker and started typing: "${query}".
+Suggest 4 to 5 common realistic food variations or portion sizes matching this query.
+For each option, provide realistic calories, protein (g), carbs (g), fat (g), and category ("breakfast", "lunch", "dinner", or "snacks").
+
+Return STRICTLY pure JSON matching this exact structure with no markdown wrapping:
+[
+  {"name": "2 Scrambled Eggs", "calories": 160, "protein": 12, "carbs": 1, "fat": 11, "category": "breakfast"},
+  {"name": "Boiled Egg (1 large)", "calories": 72, "protein": 6, "carbs": 0, "fat": 5, "category": "breakfast"}
+]`;
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: 'application/json' }
+        })
+      });
+
+      if (!res.ok) throw new Error('API request failed');
+
+      const data = await res.json();
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+      const cleanJson = rawText.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(cleanJson);
+
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setAiSuggestions(parsed);
+        setShowSuggestions(true);
+      }
+    } catch (err) {
+      console.error('AI suggestion lookup failed:', err);
+    } finally {
+      setIsSearchingSuggestions(false);
+    }
+  };
+
+  const handleFoodNameChange = (val) => {
+    setFoodName(val);
+    setShowSuggestions(true);
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    if (val.trim().length < 2) {
+      setAiSuggestions([]);
+      setIsSearchingSuggestions(false);
+      return;
+    }
+
+    setIsSearchingSuggestions(true);
+    debounceTimerRef.current = setTimeout(() => {
+      fetchAiSuggestions(val);
+    }, 380);
+  };
+
+  const handleSelectSuggestion = (item) => {
+    setFoodName(item.name || '');
+    setCalories(item.calories !== undefined ? String(item.calories) : '0');
+    setProtein(item.protein !== undefined ? String(item.protein) : '0');
+    setCarbs(item.carbs !== undefined ? String(item.carbs) : '0');
+    setFat(item.fat !== undefined ? String(item.fat) : '0');
+
+    if (item.category && ['breakfast', 'lunch', 'dinner', 'snacks'].includes(item.category.toLowerCase())) {
+      setActiveCategory(item.category.toLowerCase());
+    }
+    setShowSuggestions(false);
+  };
+
+  // ONE-CLICK NUTRIENTS ESTIMATOR (gemini-3.8-flash)
+  const handleAiEstimateText = async () => {
+    if (!foodName.trim()) {
+      alert('Please enter a food description first.');
+      return;
+    }
+
+    setIsEstimatingText(true);
+    setShowSuggestions(false);
+
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) throw new Error('VITE_GEMINI_API_KEY is not configured in your environment variables.');
+
+      const prompt = `You are a certified nutrition expert. The user wants nutrition estimates for: "${foodName.trim()}".
+Estimate the total realistic calories, protein (g), carbs (g), fat (g), and meal category ("breakfast", "lunch", "dinner", or "snacks").
+Return pure JSON with no markdown formatting:
+{"name":"cleaned name or original","calories":250,"protein":10,"carbs":30,"fat":8,"category":"lunch"}`;
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: 'application/json' }
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || `API Error: ${res.status}`);
+      }
+
+      const data = await res.json();
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      const parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim());
+
+      if (parsed.calories !== undefined) setCalories(String(Math.round(Number(parsed.calories))));
+      if (parsed.protein !== undefined) setProtein(String(Math.round(Number(parsed.protein))));
+      if (parsed.carbs !== undefined) setCarbs(String(Math.round(Number(parsed.carbs))));
+      if (parsed.fat !== undefined) setFat(String(Math.round(Number(parsed.fat))));
+      if (parsed.category && ['breakfast', 'lunch', 'dinner', 'snacks'].includes(parsed.category.toLowerCase())) {
+        setActiveCategory(parsed.category.toLowerCase());
+      }
+    } catch (err) {
+      alert(`Could not estimate nutrition: ${err.message}`);
+    } finally {
+      setIsEstimatingText(false);
+    }
+  };
+
+  // AI BODY ASSESSMENT & TARGET CALORIES (gemini-3.8-flash)
   const handleCalculateAiGoal = async (e) => {
     e.preventDefault();
     if (!weightLbs || !heightFeet) {
@@ -393,6 +539,8 @@ Return strictly pure JSON with no markdown wrapping:
     setFat('');
     setEditingEntryId(null);
     setAiSuccessMessage('');
+    setShowSuggestions(false);
+    setAiSuggestions([]);
   };
 
   const handleStartEdit = (item) => {
@@ -539,7 +687,7 @@ Return strictly pure JSON with no markdown wrapping:
       
       img.onload = () => {
         URL.revokeObjectURL(objectUrl);
-        const MAX_DIM = 900;
+        const MAX_DIM = 850;
         let width = img.naturalWidth || img.width;
         let height = img.naturalHeight || img.height;
 
@@ -557,7 +705,7 @@ Return strictly pure JSON with no markdown wrapping:
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
 
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
         resolve(dataUrl.split(',')[1]);
       };
 
@@ -575,6 +723,7 @@ Return strictly pure JSON with no markdown wrapping:
     });
   };
 
+  // AI MEAL SCANNER (gemini-3.8-flash)
   const handlePhotoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -817,7 +966,6 @@ Return strictly pure JSON with no markdown wrapping:
           boxSizing: 'border-box',
           backdropFilter: 'blur(12px)'
         }}>
-          {/* Flame Icon with subtle glow */}
           <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', marginBottom: '14px' }}>
             <div style={{
               position: 'absolute',
@@ -1031,8 +1179,7 @@ Return strictly pure JSON with no markdown wrapping:
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '8px',
-                  transition: 'background 0.2s'
+                  gap: '8px'
                 }}
               >
                 {isGuestLoading ? (
@@ -1099,7 +1246,6 @@ Return strictly pure JSON with no markdown wrapping:
       boxSizing: 'border-box',
       transition: 'background-color 0.2s, color 0.2s'
     }}>
-      {/* GUEST BANNER */}
       {isAnonymousUser && (
         <div style={{
           background: 'linear-gradient(90deg, #b45309 0%, #d97706 100%)',
@@ -1136,7 +1282,7 @@ Return strictly pure JSON with no markdown wrapping:
         </div>
       )}
 
-      {/* Top Header */}
+      {/* Header */}
       <header style={{
         maxWidth: '560px',
         margin: '0 auto',
@@ -1212,7 +1358,7 @@ Return strictly pure JSON with no markdown wrapping:
         </div>
       </header>
 
-      {/* Main Tracker Container */}
+      {/* Main Container */}
       <main style={{ maxWidth: '560px', margin: '0 auto', padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '16px', boxSizing: 'border-box', width: '100%' }}>
         
         {/* Date Selector */}
@@ -1342,7 +1488,6 @@ Return strictly pure JSON with no markdown wrapping:
             </div>
           </div>
 
-          {/* Macros */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', width: '100%', gap: '10px', background: darkMode ? '#26262e' : '#f8fafc', padding: '12px', borderRadius: '12px', textAlign: 'center', boxSizing: 'border-box' }}>
             <div>
               <span style={{ fontSize: '12px', color: '#38bdf8', fontWeight: '600' }}>Protein</span>
@@ -1461,7 +1606,7 @@ Return strictly pure JSON with no markdown wrapping:
           </div>
         </div>
 
-        {/* Add / Edit Food Form */}
+        {/* Add / Edit Food Form with Live Gemini Autocomplete */}
         <form 
           ref={formRef}
           onSubmit={handleAddOrUpdateEntry} 
@@ -1516,15 +1661,57 @@ Return strictly pure JSON with no markdown wrapping:
             ))}
           </div>
 
-          {/* Row 1: Food Name & Calories */}
+          {/* Row 1: Food Name (with Live Gemini Suggestions & Autofill) & Calories */}
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: '11px', fontWeight: '600', color: '#888' }}>Food Name</label>
+            
+            <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ fontSize: '11px', fontWeight: '600', color: '#888' }}>Food Name</label>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {isSearchingSuggestions && (
+                    <span style={{ fontSize: '10px', color: '#f97316', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                      <Loader2 size={10} className="animate-spin" /> Suggesting...
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleAiEstimateText}
+                    disabled={isEstimatingText || !foodName.trim()}
+                    title="Calculate nutrients with Gemini"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#f97316',
+                      fontSize: '11px',
+                      fontWeight: '700',
+                      cursor: isEstimatingText ? 'wait' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      padding: 0,
+                      opacity: !foodName.trim() ? 0.4 : 1
+                    }}
+                  >
+                    {isEstimatingText ? (
+                      <>
+                        <Loader2 size={12} className="animate-spin" /> Calculating...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={12} /> AI Autofill
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
               <input
                 type="text"
-                placeholder="e.g. Chicken Rice"
+                placeholder="e.g. Avocado, 2 tacos..."
                 value={foodName}
-                onChange={(e) => setFoodName(e.target.value)}
+                onChange={(e) => handleFoodNameChange(e.target.value)}
+                onFocus={() => foodName.trim().length >= 2 && setShowSuggestions(true)}
                 style={{
                   width: '100%',
                   minWidth: 0,
@@ -1538,7 +1725,55 @@ Return strictly pure JSON with no markdown wrapping:
                 }}
                 required
               />
+
+              {/* Dynamic Gemini Suggestions Dropdown */}
+              {showSuggestions && aiSuggestions.length > 0 && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  zIndex: 50,
+                  background: darkMode ? '#1c1f26' : '#ffffff',
+                  border: darkMode ? '1px solid #334155' : '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  boxShadow: '0 12px 30px rgba(0,0,0,0.3)',
+                  marginTop: '4px',
+                  overflow: 'hidden'
+                }}>
+                  {aiSuggestions.map((item, idx) => (
+                    <div
+                      key={idx}
+                      onMouseDown={() => handleSelectSuggestion(item)}
+                      style={{
+                        padding: '10px 12px',
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        borderBottom: idx !== aiSuggestions.length - 1 ? (darkMode ? '1px solid #283040' : '1px solid #f1f5f9') : 'none'
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = darkMode ? '#283046' : '#f8fafc')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <div>
+                        <div style={{ fontWeight: '600' }}>{item.name}</div>
+                        <div style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', gap: '6px', marginTop: '2px' }}>
+                          <span style={{ color: '#f97316' }}>{item.calories} kcal</span>
+                          <span>• P: {item.protein}g</span>
+                          <span>• C: {item.carbs}g</span>
+                          <span>• F: {item.fat}g</span>
+                        </div>
+                      </div>
+                      <Sparkles size={14} color="#f97316" style={{ opacity: 0.7 }} />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+
+            {/* Calories Input */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <label style={{ fontSize: '11px', fontWeight: '600', color: '#f97316' }}>Calories (kcal)</label>
               <input
@@ -1719,7 +1954,7 @@ Return strictly pure JSON with no markdown wrapping:
         </div>
       </main>
 
-      {/* MY ACCOUNT / PROFILE MODAL */}
+      {/* Account Modal */}
       {showAccountModal && (
         <div style={{
           position: 'fixed',
@@ -1746,7 +1981,6 @@ Return strictly pure JSON with no markdown wrapping:
             boxSizing: 'border-box',
             boxShadow: '0 10px 40px rgba(0,0,0,0.2)'
           }}>
-            {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div style={{
@@ -1775,7 +2009,6 @@ Return strictly pure JSON with no markdown wrapping:
               </button>
             </div>
 
-            {/* Segmented Tabs */}
             <div style={{
               display: 'grid',
               gridTemplateColumns: '1fr 1fr',
@@ -1829,10 +2062,9 @@ Return strictly pure JSON with no markdown wrapping:
               </button>
             </div>
 
-            {/* TAB 1: ABOUT USER & UPGRADE ACCOUNT */}
+            {/* TAB 1: ABOUT USER */}
             {activeAccountTab === 'about' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {/* Guest Upgrade Card */}
                 {isAnonymousUser && (
                   <div style={{
                     background: darkMode ? '#261b12' : '#fffbeb',
@@ -2051,7 +2283,6 @@ Return strictly pure JSON with no markdown wrapping:
                 </p>
 
                 <form onSubmit={handleCalculateAiGoal} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {/* Height Inputs */}
                   <div>
                     <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Height</label>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
@@ -2097,7 +2328,6 @@ Return strictly pure JSON with no markdown wrapping:
                     </div>
                   </div>
 
-                  {/* Weight & Age */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                     <div>
                       <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Weight (lbs)</label>
@@ -2140,7 +2370,6 @@ Return strictly pure JSON with no markdown wrapping:
                     </div>
                   </div>
 
-                  {/* Gender & Activity Level */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                     <div>
                       <label style={{ fontSize: '12px', fontWeight: '600', color: '#888', display: 'block', marginBottom: '4px' }}>Gender</label>
@@ -2216,7 +2445,6 @@ Return strictly pure JSON with no markdown wrapping:
                   </button>
                 </form>
 
-                {/* AI Assessment Result Display */}
                 {aiAssessment && (
                   <div style={{
                     marginTop: '18px',
