@@ -434,7 +434,10 @@ export default function App() {
         justifyContent: 'center',
         background: '#0f172a',
         padding: '20px',
-        fontFamily: 'system-ui, -apple-system, sans-serif'
+        paddingTop: 'calc(env(safe-area-inset-top, 20px) + 20px)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 20px) + 20px)',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        boxSizing: 'border-box'
       }}>
         <div style={{
           width: '100%',
@@ -513,7 +516,10 @@ export default function App() {
         justifyContent: 'center',
         background: '#0f172a',
         padding: '20px',
-        fontFamily: 'system-ui, -apple-system, sans-serif'
+        paddingTop: 'calc(env(safe-area-inset-top, 20px) + 20px)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 20px) + 20px)',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        boxSizing: 'border-box'
       }}>
         <div style={{
           width: '100%',
@@ -719,15 +725,18 @@ export default function App() {
       backgroundColor: darkMode ? '#121212' : '#f8fafc',
       color: darkMode ? '#f1f5f9' : '#0f172a',
       fontFamily: 'system-ui, -apple-system, sans-serif',
-      paddingBottom: '60px',
+      paddingBottom: 'calc(env(safe-area-inset-bottom, 20px) + 40px)',
       boxSizing: 'border-box',
       transition: 'background-color 0.2s, color 0.2s'
     }}>
-      {/* Top Header */}
+      {/* Top Header with iOS Dynamic Island & Status Bar Padding */}
       <header style={{
         maxWidth: '560px',
         margin: '0 auto',
-        padding: '16px 20px',
+        paddingTop: 'calc(env(safe-area-inset-top, 20px) + 14px)',
+        paddingBottom: '14px',
+        paddingLeft: '20px',
+        paddingRight: '20px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -1083,7 +1092,7 @@ export default function App() {
             />
           </div>
 
-          {/* Three-Column Macro Inputs with Guaranteed Container Bounds */}
+          {/* 3-Column Macro Inputs with Guaranteed Container Bounds */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
             <input
               type="number"
