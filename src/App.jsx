@@ -303,8 +303,8 @@ export default function App() {
 
       const prompt = `Analyze this food image. Provide a realistic estimate of the meal summary name, calories, protein (g), carbs (g), fat (g), and category ("breakfast", "lunch", "dinner", or "snacks"). Return JSON only: {"name":"Meal Name","calories":500,"protein":30,"carbs":40,"fat":15,"category":"lunch"}`;
 
-      // Direct call to Gemini 2.5 Flash on v1beta
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      // Updated to current gemini-3.8-flash model endpoint
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
       const res = await fetch(url, {
         method: 'POST',
