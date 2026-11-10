@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Trash2, ChevronLeft, ChevronRight, Utensils, 
   Flame, Apple, Coffee, Moon, Sun, AlertCircle, CheckCircle2, 
-  Calendar, LogOut, Camera, Loader2, Sparkles
+  Calendar, LogOut, Camera, Loader2, Sparkles, KeyRound
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -38,7 +38,10 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isResetMode, setIsResetMode] = useState(false);
+  const [isRecoverySession, setIsRecoverySession] = useState(false);
   const [authError, setAuthError] = useState('');
 
   const [currentDate, setCurrentDate] = useState(getTodayString);
@@ -63,8 +66,11 @@ export default function App() {
       setAuthLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoverySession(true);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -115,6 +121,47 @@ export default function App() {
         password: authPassword
       });
       if (error) setAuthError(error.message);
+    }
+  };
+
+  const handleResetRequest = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    if (!authEmail) {
+      setAuthError('Please enter your email address first.');
+      return;
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(authEmail, {
+      redirectTo: window.location.origin
+    });
+
+    if (error) {
+      setAuthError(error.message);
+    } else {
+      alert('Password reset link sent! Check your email inbox.');
+      setIsResetMode(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    if (!newPassword || newPassword.length < 6) {
+      setAuthError('Password must be at least 6 characters.');
+      return;
+    }
+
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword
+    });
+
+    if (error) {
+      setAuthError(error.message);
+    } else {
+      alert('Password successfully updated! You can now use your account.');
+      setIsRecoverySession(false);
+      setNewPassword('');
     }
   };
 
@@ -196,7 +243,7 @@ export default function App() {
     }
   };
 
-  // Compresses high-res camera photos to ~100-150KB for fast uploads and rapid analysis
+  // Compresses high-res camera photos to ~100-150KB for fast transfer & sub-2-second AI analysis
   const compressImage = (file) => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -380,6 +427,80 @@ export default function App() {
     );
   }
 
+  // Active password recovery flow (after clicking link in email)
+  if (isRecoverySession) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#0f172a',
+        padding: '20px',
+        fontFamily: 'system-ui, -apple-system, sans-serif'
+      }}>
+        <div style={{
+          width: '100%',
+          maxWidth: '380px',
+          background: '#1e293b',
+          padding: '30px',
+          borderRadius: '16px',
+          color: '#fff',
+          boxShadow: '0 8px 30px rgba(0,0,0,0.3)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '20px' }}>
+            <KeyRound color="#f97316" size={30} />
+            <h2 style={{ margin: 0, fontSize: '22px' }}>Set New Password</h2>
+          </div>
+
+          <p style={{ fontSize: '13px', color: '#94a3b8', textAlign: 'center', marginTop: '-10px', marginBottom: '24px' }}>
+            Enter your new account password below.
+          </p>
+
+          {authError && (
+            <div style={{ background: '#ef444420', border: '1px solid #ef4444', color: '#ef4444', padding: '10px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px' }}>
+              {authError}
+            </div>
+          )}
+
+          <form onSubmit={handleUpdatePassword} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <input
+              type="password"
+              placeholder="New password (min 6 chars)"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              style={{
+                padding: '12px',
+                borderRadius: '8px',
+                border: '1px solid #334155',
+                background: '#0f172a',
+                color: '#fff',
+                fontSize: '14px'
+              }}
+            />
+            <button
+              type="submit"
+              style={{
+                padding: '12px',
+                borderRadius: '8px',
+                background: '#f97316',
+                color: '#fff',
+                border: 'none',
+                fontWeight: '700',
+                cursor: 'pointer',
+                marginTop: '6px'
+              }}
+            >
+              Update Password
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // Login / Signup / Password Reset Request view
   if (!session) {
     return (
       <div style={{
@@ -406,7 +527,11 @@ export default function App() {
           </div>
 
           <p style={{ fontSize: '13px', color: '#94a3b8', textAlign: 'center', marginTop: '-10px', marginBottom: '24px' }}>
-            {isSignUp ? 'Create an account to sync logs across devices' : 'Sign in to access your persistent cloud logs'}
+            {isResetMode
+              ? 'Enter your email to receive a password reset link'
+              : isSignUp
+              ? 'Create an account to sync logs across devices'
+              : 'Sign in to access your persistent cloud logs'}
           </p>
 
           {authError && (
@@ -415,69 +540,140 @@ export default function App() {
             </div>
           )}
 
-          <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <input
-              type="email"
-              placeholder="Email address"
-              value={authEmail}
-              onChange={(e) => setAuthEmail(e.target.value)}
-              required
-              style={{
-                padding: '12px',
-                borderRadius: '8px',
-                border: '1px solid #334155',
-                background: '#0f172a',
-                color: '#fff',
-                fontSize: '14px'
-              }}
-            />
-            <input
-              type="password"
-              placeholder="Password"
-              value={authPassword}
-              onChange={(e) => setAuthPassword(e.target.value)}
-              required
-              style={{
-                padding: '12px',
-                borderRadius: '8px',
-                border: '1px solid #334155',
-                background: '#0f172a',
-                color: '#fff',
-                fontSize: '14px'
-              }}
-            />
+          {isResetMode ? (
+            <form onSubmit={handleResetRequest} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <input
+                type="email"
+                placeholder="Email address"
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
+                required
+                style={{
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                  background: '#0f172a',
+                  color: '#fff',
+                  fontSize: '14px'
+                }}
+              />
+              <button
+                type="submit"
+                style={{
+                  padding: '12px',
+                  borderRadius: '8px',
+                  background: '#f97316',
+                  color: '#fff',
+                  border: 'none',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  marginTop: '8px'
+                }}
+              >
+                Send Reset Link
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsResetMode(false); setAuthError(''); }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#94a3b8',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  marginTop: '8px'
+                }}
+              >
+                Back to Sign In
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <input
+                type="email"
+                placeholder="Email address"
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
+                required
+                style={{
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                  background: '#0f172a',
+                  color: '#fff',
+                  fontSize: '14px'
+                }}
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                required
+                style={{
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: '1px solid #334155',
+                  background: '#0f172a',
+                  color: '#fff',
+                  fontSize: '14px'
+                }}
+              />
+
+              {!isSignUp && (
+                <div style={{ textAlign: 'right' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setIsResetMode(true); setAuthError(''); }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#38bdf8',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      padding: 0
+                    }}
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                style={{
+                  padding: '12px',
+                  borderRadius: '8px',
+                  background: '#f97316',
+                  color: '#fff',
+                  border: 'none',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  marginTop: '4px'
+                }}
+              >
+                {isSignUp ? 'Sign Up' : 'Log In'}
+              </button>
+            </form>
+          )}
+
+          {!isResetMode && (
             <button
-              type="submit"
+              onClick={() => { setIsSignUp(!isSignUp); setAuthError(''); }}
               style={{
-                padding: '12px',
-                borderRadius: '8px',
-                background: '#f97316',
-                color: '#fff',
+                background: 'none',
                 border: 'none',
-                fontWeight: '700',
+                color: '#38bdf8',
+                fontSize: '13px',
+                marginTop: '16px',
                 cursor: 'pointer',
-                marginTop: '8px'
+                width: '100%',
+                textAlign: 'center'
               }}
             >
-              {isSignUp ? 'Sign Up' : 'Log In'}
+              {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
             </button>
-          </form>
-
-          <button
-            onClick={() => { setIsSignUp(!isSignUp); setAuthError(''); }}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#38bdf8',
-              fontSize: '13px',
-              marginTop: '16px',
-              cursor: 'pointer',
-              width: '100%',
-              textAlign: 'center'
-            }}
-          >
-            {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
-          </button>
+          )}
         </div>
       </div>
     );
