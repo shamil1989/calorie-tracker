@@ -303,10 +303,10 @@ export default function App() {
 
       const prompt = `Analyze this food image. Provide a realistic estimate of the meal summary name, calories, protein (g), carbs (g), fat (g), and category ("breakfast", "lunch", "dinner", or "snacks"). Return JSON only: {"name":"Meal Name","calories":500,"protein":30,"carbs":40,"fat":15,"category":"lunch"}`;
 
+      // Canonical production model endpoints:
       const modelsToTry = [
-        'gemini-1.5-flash-latest',
-        'gemini-1.5-flash',
-        'gemini-1.5-pro-latest'
+        'gemini-2.5-flash',
+        'gemini-1.5-flash'
       ];
 
       let res;
