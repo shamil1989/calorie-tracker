@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Edit2, X, ChevronLeft, ChevronRight, Utensils, 
   Flame, Apple, Coffee, Moon, Sun, AlertCircle, CheckCircle2, 
   Calendar, LogOut, Camera, Loader2, Sparkles, KeyRound, User, 
-  Activity, MapPin, Save
+  Activity, MapPin, Save, Mail, Lock
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -638,7 +638,7 @@ Return strictly pure JSON with no markdown wrapping:
 
   if (authLoading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#121212', color: '#fff' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#0b0f17', color: '#fff', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
         Connecting to cloud...
       </div>
     );
@@ -651,7 +651,7 @@ Return strictly pure JSON with no markdown wrapping:
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: '#0f172a',
+        background: '#0b0f17',
         padding: '20px',
         paddingTop: 'calc(env(safe-area-inset-top, 20px) + 20px)',
         paddingBottom: 'calc(env(safe-area-inset-bottom, 20px) + 20px)',
@@ -661,29 +661,29 @@ Return strictly pure JSON with no markdown wrapping:
         <div style={{
           width: '100%',
           maxWidth: '380px',
-          background: '#1e293b',
-          padding: '30px',
-          borderRadius: '16px',
+          background: 'rgba(17, 24, 39, 0.95)',
+          padding: '32px 28px',
+          borderRadius: '20px',
           color: '#fff',
-          boxShadow: '0 8px 30px rgba(0,0,0,0.3)',
+          boxShadow: '0 20px 45px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.08)',
           boxSizing: 'border-box'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '20px' }}>
-            <KeyRound color="#f97316" size={30} />
-            <h2 style={{ margin: 0, fontSize: '22px' }}>Set New Password</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '16px' }}>
+            <KeyRound color="#f97316" size={28} />
+            <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '700' }}>Set New Password</h2>
           </div>
 
-          <p style={{ fontSize: '13px', color: '#94a3b8', textAlign: 'center', marginTop: '-10px', marginBottom: '24px' }}>
+          <p style={{ fontSize: '13px', color: '#94a3b8', textAlign: 'center', marginTop: 0, marginBottom: '24px' }}>
             Enter your new account password below.
           </p>
 
           {authError && (
-            <div style={{ background: '#ef444420', border: '1px solid #ef4444', color: '#ef4444', padding: '10px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px' }}>
+            <div style={{ background: '#ef444420', border: '1px solid #ef4444', color: '#ef4444', padding: '10px', borderRadius: '10px', fontSize: '13px', marginBottom: '16px' }}>
               {authError}
             </div>
           )}
 
-          <form onSubmit={handleUpdatePassword} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <form onSubmit={handleUpdatePassword} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <input
               type="password"
               placeholder="New password (min 6 chars)"
@@ -692,14 +692,14 @@ Return strictly pure JSON with no markdown wrapping:
               required
               style={{
                 width: '100%',
-                minWidth: 0,
                 boxSizing: 'border-box',
-                padding: '12px',
-                borderRadius: '8px',
-                border: '1px solid #334155',
-                background: '#0f172a',
+                padding: '12px 14px',
+                borderRadius: '12px',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                background: '#1b2234',
                 color: '#fff',
-                fontSize: '14px'
+                fontSize: '14px',
+                outline: 'none'
               }}
             />
             <button
@@ -708,13 +708,14 @@ Return strictly pure JSON with no markdown wrapping:
                 width: '100%',
                 boxSizing: 'border-box',
                 padding: '12px',
-                borderRadius: '8px',
-                background: '#f97316',
+                borderRadius: '12px',
+                background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
                 color: '#fff',
                 border: 'none',
                 fontWeight: '700',
                 cursor: 'pointer',
-                marginTop: '6px'
+                marginTop: '4px',
+                boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)'
               }}
             >
               Update Password
@@ -725,86 +726,134 @@ Return strictly pure JSON with no markdown wrapping:
     );
   }
 
+  // REDESIGNED LOGIN & SIGNUP CARD (BiteTracks)
   if (!session) {
     return (
       <div style={{
         minHeight: '100vh',
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        background: '#0f172a',
-        padding: '20px',
-        paddingTop: 'calc(env(safe-area-inset-top, 20px) + 20px)',
-        paddingBottom: 'calc(env(safe-area-inset-bottom, 20px) + 20px)',
+        background: '#0b0f17',
+        padding: '24px',
+        paddingTop: 'calc(env(safe-area-inset-top, 20px) + 24px)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 20px) + 24px)',
         fontFamily: 'system-ui, -apple-system, sans-serif',
         boxSizing: 'border-box'
       }}>
+        {/* Top Tagline */}
+        <h2 style={{
+          margin: '0 0 24px 0',
+          fontSize: '22px',
+          fontWeight: '700',
+          letterSpacing: '-0.3px',
+          textAlign: 'center',
+          background: 'linear-gradient(90deg, #fb923c 0%, #fde68a 50%, #f97316 100%)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent'
+        }}>
+          Track smart. Eat with purpose.
+        </h2>
+
+        {/* Card */}
         <div style={{
           width: '100%',
           maxWidth: '380px',
-          background: '#1e293b',
-          padding: '30px',
-          borderRadius: '16px',
+          background: 'rgba(17, 24, 39, 0.92)',
+          padding: '32px 28px',
+          borderRadius: '24px',
           color: '#fff',
-          boxShadow: '0 8px 30px rgba(0,0,0,0.3)',
-          boxSizing: 'border-box'
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.08)',
+          boxSizing: 'border-box',
+          backdropFilter: 'blur(12px)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '20px' }}>
-            <Flame color="#f97316" size={32} />
-            <h2 style={{ margin: 0, fontSize: '24px' }}>Calorie Cloud</h2>
+          {/* Flame Icon with subtle glow */}
+          <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', marginBottom: '14px' }}>
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '46px',
+              height: '46px',
+              borderRadius: '50%',
+              background: 'rgba(249, 115, 22, 0.3)',
+              filter: 'blur(14px)'
+            }} />
+            <Flame color="#f97316" size={40} style={{ position: 'relative', zIndex: 1 }} />
           </div>
 
-          <p style={{ fontSize: '13px', color: '#94a3b8', textAlign: 'center', marginTop: '-10px', marginBottom: '24px' }}>
+          <h1 style={{ margin: '0 0 4px 0', fontSize: '26px', fontWeight: '800', textAlign: 'center', letterSpacing: '-0.5px' }}>
+            BiteTracks
+          </h1>
+
+          <p style={{ fontSize: '13px', color: '#94a3b8', textAlign: 'center', marginTop: 0, marginBottom: '24px' }}>
             {isResetMode
               ? 'Enter your email to receive a password reset link'
               : isSignUp
-              ? 'Create an account to sync logs across devices'
-              : 'Sign in to access your persistent cloud logs'}
+              ? 'Create an account to start tracking'
+              : 'Sign in to your persistent bite logs'}
           </p>
 
           {authError && (
-            <div style={{ background: '#ef444420', border: '1px solid #ef4444', color: '#ef4444', padding: '10px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px' }}>
+            <div style={{
+              background: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid rgba(239, 68, 68, 0.5)',
+              color: '#f87171',
+              padding: '10px 14px',
+              borderRadius: '10px',
+              fontSize: '13px',
+              marginBottom: '16px'
+            }}>
               {authError}
             </div>
           )}
 
           {isResetMode ? (
-            <form onSubmit={handleResetRequest} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <input
-                type="email"
-                placeholder="Email address"
-                value={authEmail}
-                onChange={(e) => setAuthEmail(e.target.value)}
-                required
-                style={{
-                  width: '100%',
-                  minWidth: 0,
-                  boxSizing: 'border-box',
-                  padding: '12px',
-                  borderRadius: '8px',
-                  border: '1px solid #334155',
-                  background: '#0f172a',
-                  color: '#fff',
-                  fontSize: '14px'
-                }}
-              />
+            <form onSubmit={handleResetRequest} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <Mail size={18} color="#94a3b8" style={{ position: 'absolute', left: '14px', pointerEvents: 'none' }} />
+                <input
+                  type="email"
+                  placeholder="Email address"
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  required
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px 14px 12px 42px',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    background: '#1b2234',
+                    color: '#fff',
+                    fontSize: '14px',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+
               <button
                 type="submit"
                 style={{
                   width: '100%',
                   boxSizing: 'border-box',
                   padding: '12px',
-                  borderRadius: '8px',
-                  background: '#f97316',
+                  borderRadius: '12px',
+                  background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
                   color: '#fff',
                   border: 'none',
                   fontWeight: '700',
+                  fontSize: '14px',
                   cursor: 'pointer',
-                  marginTop: '8px'
+                  marginTop: '4px',
+                  boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)'
                 }}
               >
                 Send Reset Link
               </button>
+
               <button
                 type="button"
                 onClick={() => { setIsResetMode(false); setAuthError(''); }}
@@ -814,50 +863,57 @@ Return strictly pure JSON with no markdown wrapping:
                   color: '#94a3b8',
                   fontSize: '13px',
                   cursor: 'pointer',
-                  marginTop: '8px'
+                  marginTop: '6px'
                 }}
               >
                 Back to Sign In
               </button>
             </form>
           ) : (
-            <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <input
-                type="email"
-                placeholder="Email address"
-                value={authEmail}
-                onChange={(e) => setAuthEmail(e.target.value)}
-                required
-                style={{
-                  width: '100%',
-                  minWidth: 0,
-                  boxSizing: 'border-box',
-                  padding: '12px',
-                  borderRadius: '8px',
-                  border: '1px solid #334155',
-                  background: '#0f172a',
-                  color: '#fff',
-                  fontSize: '14px'
-                }}
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={authPassword}
-                onChange={(e) => setAuthPassword(e.target.value)}
-                required
-                style={{
-                  width: '100%',
-                  minWidth: 0,
-                  boxSizing: 'border-box',
-                  padding: '12px',
-                  borderRadius: '8px',
-                  border: '1px solid #334155',
-                  background: '#0f172a',
-                  color: '#fff',
-                  fontSize: '14px'
-                }}
-              />
+            <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <Mail size={18} color="#94a3b8" style={{ position: 'absolute', left: '14px', pointerEvents: 'none' }} />
+                <input
+                  type="email"
+                  placeholder="Enter your email"
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  required
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px 14px 12px 42px',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    background: '#1b2234',
+                    color: '#fff',
+                    fontSize: '14px',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <Lock size={18} color="#94a3b8" style={{ position: 'absolute', left: '14px', pointerEvents: 'none' }} />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  required
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px 14px 12px 42px',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    background: '#1b2234',
+                    color: '#fff',
+                    fontSize: '14px',
+                    outline: 'none'
+                  }}
+                />
+              </div>
 
               {!isSignUp && (
                 <div style={{ textAlign: 'right' }}>
@@ -867,7 +923,7 @@ Return strictly pure JSON with no markdown wrapping:
                     style={{
                       background: 'none',
                       border: 'none',
-                      color: '#38bdf8',
+                      color: '#94a3b8',
                       fontSize: '12px',
                       cursor: 'pointer',
                       padding: 0
@@ -884,13 +940,15 @@ Return strictly pure JSON with no markdown wrapping:
                   width: '100%',
                   boxSizing: 'border-box',
                   padding: '12px',
-                  borderRadius: '8px',
-                  background: '#f97316',
+                  borderRadius: '12px',
+                  background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
                   color: '#fff',
                   border: 'none',
                   fontWeight: '700',
+                  fontSize: '14px',
                   cursor: 'pointer',
-                  marginTop: '4px'
+                  marginTop: '4px',
+                  boxShadow: '0 6px 18px rgba(249, 115, 22, 0.35)'
                 }}
               >
                 {isSignUp ? 'Sign Up' : 'Log In'}
@@ -899,21 +957,23 @@ Return strictly pure JSON with no markdown wrapping:
           )}
 
           {!isResetMode && (
-            <button
-              onClick={() => { setIsSignUp(!isSignUp); setAuthError(''); }}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#38bdf8',
-                fontSize: '13px',
-                marginTop: '16px',
-                cursor: 'pointer',
-                width: '100%',
-                textAlign: 'center'
-              }}
-            >
-              {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
-            </button>
+            <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '13px', color: '#94a3b8' }}>
+              {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
+              <button
+                type="button"
+                onClick={() => { setIsSignUp(!isSignUp); setAuthError(''); }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#f97316',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  padding: 0
+                }}
+              >
+                {isSignUp ? 'Log In' : 'Sign Up'}
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -962,7 +1022,7 @@ Return strictly pure JSON with no markdown wrapping:
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Flame color="#f97316" size={26} />
-          <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>Calorie Tracker</h1>
+          <h1 style={{ fontSize: '20px', fontWeight: '700', margin: 0 }}>BiteTracks</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
