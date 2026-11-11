@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Edit2, X, ChevronLeft, ChevronRight, Utensils, 
   Flame, Apple, Coffee, Moon, Sun, AlertCircle, CheckCircle2, 
   Calendar, LogOut, Camera, Loader2, Sparkles, KeyRound, User, 
-  Activity, MapPin, Save, Mail, Lock, UserCheck, ShieldAlert
+  Activity, MapPin, Save, Mail, Lock, UserCheck, ShieldAlert, Database
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -61,9 +61,9 @@ export default function App() {
   const [editingEntryId, setEditingEntryId] = useState(null);
   const formRef = useRef(null);
 
-  // Live Gemini Autocomplete & AI Nutrient Estimator State
-  const [aiSuggestions, setAiSuggestions] = useState([]);
-  const [isSearchingSuggestions, setIsSearchingSuggestions] = useState(false);
+  // Database Autocomplete & AI Estimator State
+  const [dbSuggestions, setDbSuggestions] = useState([]);
+  const [isSearchingDb, setIsSearchingDb] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isEstimatingText, setIsEstimatingText] = useState(false);
   const debounceTimerRef = useRef(null);
@@ -298,57 +298,35 @@ export default function App() {
     }
   };
 
-  // AI LIVE AUTOCOMPLETE SUGGESTIONS (gemini-3.8-flash)
-  const fetchAiSuggestions = async (searchTerm) => {
+  // --- FAST 1.7M ROW SUPABASE DATABASE SEARCH ---
+const fetchDatabaseSuggestions = async (searchTerm) => {
     const query = searchTerm.trim();
     if (query.length < 2) {
-      setAiSuggestions([]);
-      setIsSearchingSuggestions(false);
+      setDbSuggestions([]);
+      setIsSearchingDb(false);
       return;
     }
 
-    setIsSearchingSuggestions(true);
+    setIsSearchingDb(true);
 
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) return;
-
-      const prompt = `The user is logging food into a calorie tracker and started typing: "${query}".
-Suggest 4 to 5 common realistic food variations or portion sizes matching this query.
-For each option, provide realistic calories, protein (g), carbs (g), fat (g), and category ("breakfast", "lunch", "dinner", or "snacks").
-
-Return STRICTLY pure JSON matching this exact structure with no markdown wrapping:
-[
-  {"name": "2 Scrambled Eggs", "calories": 160, "protein": 12, "carbs": 1, "fat": 11, "category": "breakfast"},
-  {"name": "Boiled Egg (1 large)", "calories": 72, "protein": 6, "carbs": 0, "fat": 5, "category": "breakfast"}
-]`;
-
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json' }
-        })
+      const { data, error } = await supabase.rpc('search_foods', {
+        search_term: query
       });
 
-      if (!res.ok) throw new Error('API request failed');
-
-      const data = await res.json();
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-      const cleanJson = rawText.replace(/```json|```/g, '').trim();
-      const parsed = JSON.parse(cleanJson);
-
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        setAiSuggestions(parsed);
+      if (error) {
+        console.error('Database query error:', error.message);
+        setDbSuggestions([]);
+      } else if (Array.isArray(data) && data.length > 0) {
+        setDbSuggestions(data);
         setShowSuggestions(true);
+      } else {
+        setDbSuggestions([]);
       }
     } catch (err) {
-      console.error('AI suggestion lookup failed:', err);
+      console.error('Database lookup failed:', err);
     } finally {
-      setIsSearchingSuggestions(false);
+      setIsSearchingDb(false);
     }
   };
 
@@ -361,31 +339,27 @@ Return STRICTLY pure JSON matching this exact structure with no markdown wrappin
     }
 
     if (val.trim().length < 2) {
-      setAiSuggestions([]);
-      setIsSearchingSuggestions(false);
+      setDbSuggestions([]);
+      setIsSearchingDb(false);
       return;
     }
 
-    setIsSearchingSuggestions(true);
+    setIsSearchingDb(true);
     debounceTimerRef.current = setTimeout(() => {
-      fetchAiSuggestions(val);
-    }, 380);
+      fetchDatabaseSuggestions(val);
+    }, 180); // Ultra-fast 180ms debounce for local PostgreSQL trigram search
   };
 
   const handleSelectSuggestion = (item) => {
     setFoodName(item.name || '');
-    setCalories(item.calories !== undefined ? String(item.calories) : '0');
-    setProtein(item.protein !== undefined ? String(item.protein) : '0');
-    setCarbs(item.carbs !== undefined ? String(item.carbs) : '0');
-    setFat(item.fat !== undefined ? String(item.fat) : '0');
-
-    if (item.category && ['breakfast', 'lunch', 'dinner', 'snacks'].includes(item.category.toLowerCase())) {
-      setActiveCategory(item.category.toLowerCase());
-    }
+    setCalories(item.calories !== undefined ? String(Math.round(Number(item.calories))) : '0');
+    setProtein(item.protein !== undefined ? String(Math.round(Number(item.protein) * 10) / 10) : '0');
+    setCarbs(item.carbs !== undefined ? String(Math.round(Number(item.carbs) * 10) / 10) : '0');
+    setFat(item.fat !== undefined ? String(Math.round(Number(item.fat) * 10) / 10) : '0');
     setShowSuggestions(false);
   };
 
-  // ONE-CLICK NUTRIENTS ESTIMATOR (gemini-3.8-flash)
+  // ONE-CLICK NUTRIENTS ESTIMATOR (Gemini on-demand)
   const handleAiEstimateText = async () => {
     if (!foodName.trim()) {
       alert('Please enter a food description first.');
@@ -404,7 +378,7 @@ Estimate the total realistic calories, protein (g), carbs (g), fat (g), and meal
 Return pure JSON with no markdown formatting:
 {"name":"cleaned name or original","calories":250,"protein":10,"carbs":30,"fat":8,"category":"lunch"}`;
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
       const res = await fetch(url, {
         method: 'POST',
@@ -438,7 +412,7 @@ Return pure JSON with no markdown formatting:
     }
   };
 
-  // AI BODY ASSESSMENT & TARGET CALORIES (gemini-3.8-flash)
+  // AI BODY ASSESSMENT & TARGET CALORIES
   const handleCalculateAiGoal = async (e) => {
     e.preventDefault();
     if (!weightLbs || !heightFeet) {
@@ -483,7 +457,7 @@ Return strictly pure JSON with no markdown wrapping:
   "rationale": "We targeted a gentle 450 kcal deficit below your estimated maintenance of 2400 kcal to promote steady fat loss while preserving lean muscle mass."
 }`;
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
       const res = await fetch(url, {
         method: 'POST',
@@ -540,7 +514,7 @@ Return strictly pure JSON with no markdown wrapping:
     setEditingEntryId(null);
     setAiSuccessMessage('');
     setShowSuggestions(false);
-    setAiSuggestions([]);
+    setDbSuggestions([]);
   };
 
   const handleStartEdit = (item) => {
@@ -723,7 +697,7 @@ Return strictly pure JSON with no markdown wrapping:
     });
   };
 
-  // AI MEAL SCANNER (gemini-3.8-flash)
+  // AI MEAL SCANNER (Gemini Vision)
   const handlePhotoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -741,7 +715,7 @@ Return strictly pure JSON with no markdown wrapping:
 
       const prompt = `Analyze this food image. Provide a realistic estimate of the meal summary name, calories, protein (g), carbs (g), fat (g), and category ("breakfast", "lunch", "dinner", or "snacks"). Return JSON only: {"name":"Meal Name","calories":500,"protein":30,"carbs":40,"fat":15,"category":"lunch"}`;
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
       const res = await fetch(url, {
         method: 'POST',
@@ -924,7 +898,6 @@ Return strictly pure JSON with no markdown wrapping:
     );
   }
 
-  // REDESIGNED LOGIN CARD WITH "CONTINUE AS GUEST"
   if (!session) {
     return (
       <div style={{
@@ -940,7 +913,6 @@ Return strictly pure JSON with no markdown wrapping:
         fontFamily: 'system-ui, -apple-system, sans-serif',
         boxSizing: 'border-box'
       }}>
-        {/* Top Tagline */}
         <h2 style={{
           margin: '0 0 24px 0',
           fontSize: '22px',
@@ -954,7 +926,6 @@ Return strictly pure JSON with no markdown wrapping:
           Track smart. Eat with purpose.
         </h2>
 
-        {/* Card */}
         <div style={{
           width: '100%',
           maxWidth: '380px',
@@ -1153,14 +1124,12 @@ Return strictly pure JSON with no markdown wrapping:
                 </button>
               </form>
 
-              {/* OR DIVIDER */}
               <div style={{ display: 'flex', alignItems: 'center', margin: '18px 0', gap: '10px' }}>
                 <div style={{ flex: 1, height: '1px', background: 'rgba(255, 255, 255, 0.1)' }} />
                 <span style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>or</span>
                 <div style={{ flex: 1, height: '1px', background: 'rgba(255, 255, 255, 0.1)' }} />
               </div>
 
-              {/* CONTINUE AS GUEST BUTTON */}
               <button
                 type="button"
                 onClick={handleGuestSignIn}
@@ -1504,7 +1473,7 @@ Return strictly pure JSON with no markdown wrapping:
           </div>
         </div>
 
-        {/* AI Scanner Card */}
+        {/* AI Scanner Card (Gemini) */}
         <div style={{
           background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
           borderRadius: '16px',
@@ -1522,7 +1491,7 @@ Return strictly pure JSON with no markdown wrapping:
               <Sparkles size={18} /> AI Meal Scanner
             </div>
             <div style={{ fontSize: '12px', opacity: 0.9, marginTop: '2px' }}>
-              Take a photo to estimate calories & macros
+              Take a photo to estimate calories & macros with Gemini
             </div>
           </div>
 
@@ -1606,7 +1575,7 @@ Return strictly pure JSON with no markdown wrapping:
           </div>
         </div>
 
-        {/* Add / Edit Food Form with Live Gemini Autocomplete */}
+        {/* Add / Edit Food Form with Instant Database Autocomplete */}
         <form 
           ref={formRef}
           onSubmit={handleAddOrUpdateEntry} 
@@ -1661,54 +1630,42 @@ Return strictly pure JSON with no markdown wrapping:
             ))}
           </div>
 
-          {/* Row 1: Food Name (with Live Gemini Suggestions & Autofill) & Calories */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
-            
-            <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontSize: '11px', fontWeight: '600', color: '#888' }}>Food Name</label>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {isSearchingSuggestions && (
-                    <span style={{ fontSize: '10px', color: '#f97316', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                      <Loader2 size={10} className="animate-spin" /> Suggesting...
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleAiEstimateText}
-                    disabled={isEstimatingText || !foodName.trim()}
-                    title="Calculate nutrients with Gemini"
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#f97316',
-                      fontSize: '11px',
-                      fontWeight: '700',
-                      cursor: isEstimatingText ? 'wait' : 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '3px',
-                      padding: 0,
-                      opacity: !foodName.trim() ? 0.4 : 1
-                    }}
-                  >
-                    {isEstimatingText ? (
-                      <>
-                        <Loader2 size={12} className="animate-spin" /> Calculating...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={12} /> AI Autofill
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
+{/* Row 1: Food Name & Calories */}
+<div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
+  
+  <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <label style={{ fontSize: '11px', fontWeight: '600', color: '#888' }}>Food Name</label>
+      {isSearchingDb && (
+        <span style={{ fontSize: '10px', color: '#f97316', display: 'flex', alignItems: 'center', gap: '3px' }}>
+          <Loader2 size={10} className="animate-spin" /> Searching DB...
+        </span>
+      )}
+    </div>
+
+    <input
+      type="text"
+      placeholder="Search 1.7M foods (e.g. Avocado, chicken)..."
+      value={foodName}
+      onChange={(e) => handleFoodNameChange(e.target.value)}
+      onFocus={() => foodName.trim().length >= 2 && setShowSuggestions(true)}
+      style={{
+        width: '100%',
+        minWidth: 0,
+        boxSizing: 'border-box',
+        padding: '10px 12px',
+        borderRadius: '8px',
+        border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
+        background: darkMode ? '#27272a' : '#fff',
+        color: 'inherit',
+        fontSize: '14px'
+      }}
+      required
+    />
 
               <input
                 type="text"
-                placeholder="e.g. Avocado, 2 tacos..."
+                placeholder="Search 1.7M foods (e.g. Avocado, chicken)..."
                 value={foodName}
                 onChange={(e) => handleFoodNameChange(e.target.value)}
                 onFocus={() => foodName.trim().length >= 2 && setShowSuggestions(true)}
@@ -1726,8 +1683,8 @@ Return strictly pure JSON with no markdown wrapping:
                 required
               />
 
-              {/* Dynamic Gemini Suggestions Dropdown */}
-              {showSuggestions && aiSuggestions.length > 0 && (
+              {/* Instant Database Suggestions Dropdown */}
+              {showSuggestions && dbSuggestions.length > 0 && (
                 <div style={{
                   position: 'absolute',
                   top: '100%',
@@ -1739,11 +1696,12 @@ Return strictly pure JSON with no markdown wrapping:
                   borderRadius: '10px',
                   boxShadow: '0 12px 30px rgba(0,0,0,0.3)',
                   marginTop: '4px',
-                  overflow: 'hidden'
+                  maxHeight: '260px',
+                  overflowY: 'auto'
                 }}>
-                  {aiSuggestions.map((item, idx) => (
+                  {dbSuggestions.map((item) => (
                     <div
-                      key={idx}
+                      key={item.id}
                       onMouseDown={() => handleSelectSuggestion(item)}
                       style={{
                         padding: '10px 12px',
@@ -1752,21 +1710,21 @@ Return strictly pure JSON with no markdown wrapping:
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        borderBottom: idx !== aiSuggestions.length - 1 ? (darkMode ? '1px solid #283040' : '1px solid #f1f5f9') : 'none'
+                        borderBottom: darkMode ? '1px solid #283040' : '1px solid #f1f5f9'
                       }}
                       onMouseEnter={(e) => (e.currentTarget.style.background = darkMode ? '#283046' : '#f8fafc')}
                       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
-                      <div>
-                        <div style={{ fontWeight: '600' }}>{item.name}</div>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '8px' }}>
+                        <div style={{ fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
                         <div style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', gap: '6px', marginTop: '2px' }}>
-                          <span style={{ color: '#f97316' }}>{item.calories} kcal</span>
-                          <span>• P: {item.protein}g</span>
-                          <span>• C: {item.carbs}g</span>
-                          <span>• F: {item.fat}g</span>
+                          <span style={{ color: '#f97316' }}>{Math.round(item.calories)} kcal</span>
+                          <span>• P: {Math.round(item.protein)}g</span>
+                          <span>• C: {Math.round(item.carbs)}g</span>
+                          <span>• F: {Math.round(item.fat)}g</span>
                         </div>
                       </div>
-                      <Sparkles size={14} color="#f97316" style={{ opacity: 0.7 }} />
+                      <Database size={13} color="#f97316" style={{ opacity: 0.6, flexShrink: 0 }} />
                     </div>
                   ))}
                 </div>
@@ -1803,6 +1761,7 @@ Return strictly pure JSON with no markdown wrapping:
               <label style={{ fontSize: '11px', fontWeight: '700', color: '#38bdf8' }}>Protein (g)</label>
               <input
                 type="number"
+                step="0.1"
                 placeholder="0"
                 value={protein}
                 onChange={(e) => setProtein(e.target.value)}
@@ -1823,6 +1782,7 @@ Return strictly pure JSON with no markdown wrapping:
               <label style={{ fontSize: '11px', fontWeight: '700', color: '#f59e0b' }}>Carbs (g)</label>
               <input
                 type="number"
+                step="0.1"
                 placeholder="0"
                 value={carbs}
                 onChange={(e) => setCarbs(e.target.value)}
@@ -1843,6 +1803,7 @@ Return strictly pure JSON with no markdown wrapping:
               <label style={{ fontSize: '11px', fontWeight: '700', color: '#ec4899' }}>Fat (g)</label>
               <input
                 type="number"
+                step="0.1"
                 placeholder="0"
                 value={fat}
                 onChange={(e) => setFat(e.target.value)}
