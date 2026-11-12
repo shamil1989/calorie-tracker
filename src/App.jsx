@@ -363,7 +363,7 @@ export default function App() {
     setShowSuggestions(false);
   };
 
-  // AI BODY ASSESSMENT & TARGET CALORIES
+  // AI BODY ASSESSMENT & TARGET CALORIES (gemini-3.8-flash)
   const handleCalculateAiGoal = async (e) => {
     e.preventDefault();
     if (!weightLbs || !heightFeet) {
@@ -408,7 +408,7 @@ Return strictly pure JSON with no markdown wrapping:
   "rationale": "We targeted a gentle 450 kcal deficit below your estimated maintenance of 2400 kcal to promote steady fat loss while preserving lean muscle mass."
 }`;
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
       const res = await fetch(url, {
         method: 'POST',
@@ -648,7 +648,7 @@ Return strictly pure JSON with no markdown wrapping:
     });
   };
 
-  // AI MEAL SCANNER (Gemini Vision)
+  // AI MEAL SCANNER (gemini-3.8-flash)
   const handlePhotoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -666,7 +666,7 @@ Return strictly pure JSON with no markdown wrapping:
 
       const prompt = `Analyze this food image. Provide a realistic estimate of the meal summary name, calories, protein (g), carbs (g), fat (g), and category ("breakfast", "lunch", "dinner", or "snacks"). Return JSON only: {"name":"Meal Name","calories":500,"protein":30,"carbs":40,"fat":15,"category":"lunch"}`;
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
       const res = await fetch(url, {
         method: 'POST',
