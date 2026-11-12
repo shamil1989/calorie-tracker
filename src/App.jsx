@@ -61,11 +61,10 @@ export default function App() {
   const [editingEntryId, setEditingEntryId] = useState(null);
   const formRef = useRef(null);
 
-  // Database Autocomplete & AI Estimator State
+  // Database Autocomplete State
   const [dbSuggestions, setDbSuggestions] = useState([]);
   const [isSearchingDb, setIsSearchingDb] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [isEstimatingText, setIsEstimatingText] = useState(false);
   const debounceTimerRef = useRef(null);
 
   // AI Meal Scanner State
@@ -298,8 +297,8 @@ export default function App() {
     }
   };
 
-  // --- FAST 1.7M ROW SUPABASE DATABASE SEARCH ---
-const fetchDatabaseSuggestions = async (searchTerm) => {
+  // --- FAST SUPABASE DATABASE SEARCH (Prioritizing staples) ---
+  const fetchDatabaseSuggestions = async (searchTerm) => {
     const query = searchTerm.trim();
     if (query.length < 2) {
       setDbSuggestions([]);
@@ -314,17 +313,22 @@ const fetchDatabaseSuggestions = async (searchTerm) => {
         search_term: query
       });
 
-      if (error) {
-        console.error('Database query error:', error.message);
-        setDbSuggestions([]);
-      } else if (Array.isArray(data) && data.length > 0) {
+      if (!error && Array.isArray(data) && data.length > 0) {
         setDbSuggestions(data);
         setShowSuggestions(true);
       } else {
-        setDbSuggestions([]);
+        // Fallback to direct query if RPC isn't configured
+        const { data: fallbackData } = await supabase
+          .from('food_database')
+          .select('id, name, calories, protein, carbs, fat, fiber, serving_size_g')
+          .ilike('name', `%${query}%`)
+          .limit(8);
+
+        setDbSuggestions(fallbackData || []);
+        setShowSuggestions(Boolean(fallbackData?.length));
       }
     } catch (err) {
-      console.error('Database lookup failed:', err);
+      console.error('Database food lookup failed:', err);
     } finally {
       setIsSearchingDb(false);
     }
@@ -347,7 +351,7 @@ const fetchDatabaseSuggestions = async (searchTerm) => {
     setIsSearchingDb(true);
     debounceTimerRef.current = setTimeout(() => {
       fetchDatabaseSuggestions(val);
-    }, 180); // Ultra-fast 180ms debounce for local PostgreSQL trigram search
+    }, 180);
   };
 
   const handleSelectSuggestion = (item) => {
@@ -357,59 +361,6 @@ const fetchDatabaseSuggestions = async (searchTerm) => {
     setCarbs(item.carbs !== undefined ? String(Math.round(Number(item.carbs) * 10) / 10) : '0');
     setFat(item.fat !== undefined ? String(Math.round(Number(item.fat) * 10) / 10) : '0');
     setShowSuggestions(false);
-  };
-
-  // ONE-CLICK NUTRIENTS ESTIMATOR (Gemini on-demand)
-  const handleAiEstimateText = async () => {
-    if (!foodName.trim()) {
-      alert('Please enter a food description first.');
-      return;
-    }
-
-    setIsEstimatingText(true);
-    setShowSuggestions(false);
-
-    try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) throw new Error('VITE_GEMINI_API_KEY is not configured in your environment variables.');
-
-      const prompt = `You are a certified nutrition expert. The user wants nutrition estimates for: "${foodName.trim()}".
-Estimate the total realistic calories, protein (g), carbs (g), fat (g), and meal category ("breakfast", "lunch", "dinner", or "snacks").
-Return pure JSON with no markdown formatting:
-{"name":"cleaned name or original","calories":250,"protein":10,"carbs":30,"fat":8,"category":"lunch"}`;
-
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json' }
-        })
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error?.message || `API Error: ${res.status}`);
-      }
-
-      const data = await res.json();
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-      const parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim());
-
-      if (parsed.calories !== undefined) setCalories(String(Math.round(Number(parsed.calories))));
-      if (parsed.protein !== undefined) setProtein(String(Math.round(Number(parsed.protein))));
-      if (parsed.carbs !== undefined) setCarbs(String(Math.round(Number(parsed.carbs))));
-      if (parsed.fat !== undefined) setFat(String(Math.round(Number(parsed.fat))));
-      if (parsed.category && ['breakfast', 'lunch', 'dinner', 'snacks'].includes(parsed.category.toLowerCase())) {
-        setActiveCategory(parsed.category.toLowerCase());
-      }
-    } catch (err) {
-      alert(`Could not estimate nutrition: ${err.message}`);
-    } finally {
-      setIsEstimatingText(false);
-    }
   };
 
   // AI BODY ASSESSMENT & TARGET CALORIES
@@ -1575,7 +1526,7 @@ Return strictly pure JSON with no markdown wrapping:
           </div>
         </div>
 
-        {/* Add / Edit Food Form with Instant Database Autocomplete */}
+        {/* Add / Edit Food Form */}
         <form 
           ref={formRef}
           onSubmit={handleAddOrUpdateEntry} 
@@ -1630,42 +1581,22 @@ Return strictly pure JSON with no markdown wrapping:
             ))}
           </div>
 
-{/* Row 1: Food Name & Calories */}
-<div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
-  
-  <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <label style={{ fontSize: '11px', fontWeight: '600', color: '#888' }}>Food Name</label>
-      {isSearchingDb && (
-        <span style={{ fontSize: '10px', color: '#f97316', display: 'flex', alignItems: 'center', gap: '3px' }}>
-          <Loader2 size={10} className="animate-spin" /> Searching DB...
-        </span>
-      )}
-    </div>
-
-    <input
-      type="text"
-      placeholder="Search 1.7M foods (e.g. Avocado, chicken)..."
-      value={foodName}
-      onChange={(e) => handleFoodNameChange(e.target.value)}
-      onFocus={() => foodName.trim().length >= 2 && setShowSuggestions(true)}
-      style={{
-        width: '100%',
-        minWidth: 0,
-        boxSizing: 'border-box',
-        padding: '10px 12px',
-        borderRadius: '8px',
-        border: darkMode ? '1px solid #333' : '1px solid #cbd5e1',
-        background: darkMode ? '#27272a' : '#fff',
-        color: 'inherit',
-        fontSize: '14px'
-      }}
-      required
-    />
+          {/* Row 1: Single Food Name Input & Calories Input */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '8px', width: '100%', boxSizing: 'border-box' }}>
+            
+            <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ fontSize: '11px', fontWeight: '600', color: '#888' }}>Food Name</label>
+                {isSearchingDb && (
+                  <span style={{ fontSize: '10px', color: '#f97316', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                    <Loader2 size={10} className="animate-spin" /> Searching DB...
+                  </span>
+                )}
+              </div>
 
               <input
                 type="text"
-                placeholder="Search 1.7M foods (e.g. Avocado, chicken)..."
+                placeholder="Search 1.8M foods (e.g. Avocado, chicken)..."
                 value={foodName}
                 onChange={(e) => handleFoodNameChange(e.target.value)}
                 onFocus={() => foodName.trim().length >= 2 && setShowSuggestions(true)}
@@ -1683,7 +1614,7 @@ Return strictly pure JSON with no markdown wrapping:
                 required
               />
 
-              {/* Instant Database Suggestions Dropdown */}
+              {/* Suggestions Dropdown */}
               {showSuggestions && dbSuggestions.length > 0 && (
                 <div style={{
                   position: 'absolute',

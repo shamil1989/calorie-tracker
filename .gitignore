@@ -25,3 +25,7 @@ dist-ssr
 .env
 .env*.local
 .env.local
+
+*.csv
+upload_foods.cjs
+flatten.cjs
